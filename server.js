@@ -154,7 +154,7 @@ class ChapaService {
 
 const chapa = new ChapaService();
 
-// ========== ROOT ROUTE ==========
+// ========== API ROUTES ==========
 app.get("/api/medicines", async (req, res) => {
   try {
     const { name, dosage } = req.query;
@@ -176,9 +176,6 @@ app.get("/api/medicines", async (req, res) => {
   }
 });
 
-/* =========================
-   PHARMACIST – ADD MEDICINE
-   ========================= */
 app.post("/api/medicines", async (req, res) => {
   try {
     const medicine = req.body;
@@ -194,9 +191,6 @@ app.post("/api/medicines", async (req, res) => {
   }
 });
 
-/* =========================
-   DELIVERY ORDER
-   ========================= */
 app.post("/api/orders", async (req, res) => {
   try {
     const order = req.body;
@@ -213,9 +207,6 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-/* =========================
-   ADMIN – GET ALL ORDERS
-   ========================= */
 app.get("/api/orders", async (req, res) => {
   try {
     const snapshot = await db.collection("orders").get();
@@ -229,10 +220,6 @@ app.get("/api/orders", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-/* =========================
-   CHAPA PAYMENT ROUTES
-   ========================= */
 
 app.post("/api/payments/initiate", async (req, res) => {
   const { amount, email, phone, firstName, lastName, itemName, pharmacyId } = req.body;
@@ -276,7 +263,6 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
-// ========== CALLBACK ENDPOINT ==========
 app.get("/api/payments/callback", async (req, res) => {
   console.log("📞 Payment callback received (GET):", req.query);
   
@@ -351,10 +337,20 @@ app.post("/api/payments/callback", async (req, res) => {
   res.json({ received: true });
 });
 
-// ========== START SERVER ==========
+// ========== START SERVER - RAILWAY FIX ==========
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
+
+// This is critical for Railway - must bind to 0.0.0.0
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ MediFind backend running on port ${PORT}`);
   console.log(`💰 Chapa payment mode: test`);
   console.log(`📡 Callback endpoint: /api/payments/callback`);
+});
+
+// Handle graceful shutdown for Railway
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
 });
