@@ -49,7 +49,7 @@ class ChapaService {
         last_name: paymentData.lastName || "Name",
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
-        callback_url: `https://medifind-backend.up.railway.app/api/payments/callback`,
+        callback_url: `https://medifind-backend-production.up.railway.app/api/payments/callback`,
         return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pharmacy/payment-status`,
         customization: {
           title: "MediFind Payment",
@@ -144,7 +144,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ========== ROOT ROUTE FOR RAILWAY ==========
+// ========== HEALTH CHECK - MUST BE FIRST AND FAST ==========
+app.get("/health", (req, res) => {
+  res.status(200).json({ 
+    status: "OK", 
+    mode: process.env.CHAPA_MODE || "test",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ========== ROOT ROUTE ==========
 app.get("/", (req, res) => {
   res.json({
     message: "MediFind Backend API is running!",
@@ -355,15 +364,6 @@ app.get("/api/payments/callback", async (req, res) => {
 app.post("/api/payments/callback", async (req, res) => {
   console.log("📞 Payment callback received (POST):", req.body);
   res.json({ received: true });
-});
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    mode: "test",
-    timestamp: new Date().toISOString()
-  });
 });
 
 // ========== START SERVER ==========
