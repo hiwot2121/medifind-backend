@@ -4,20 +4,6 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 require("dotenv").config();
 
-// ========== CREATE APP FIRST ==========
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// ========== IMMEDIATE HEALTH CHECK - MUST BE FIRST AND FAST ==========
-app.get("/health", (req, res) => {
-  return res.status(200).json({ status: "OK", mode: process.env.CHAPA_MODE || "test" });
-});
-
-app.get("/", (req, res) => {
-  return res.status(200).json({ message: "MediFind Backend is running!" });
-});
-
 // ========== FIREBASE CONFIGURATION ==========
 const serviceAccount = {
   type: "service_account",
@@ -63,7 +49,7 @@ class ChapaService {
         last_name: paymentData.lastName || "Name",
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
-        callback_url: `https://medifind-backend-production.up.railway.app/api/payments/callback`,
+        callback_url: `https://medifind-backend-0raf.onrender.com/api/payments/callback`,
         return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pharmacy/payment-status`,
         customization: {
           title: "MediFind Payment",
@@ -154,7 +140,35 @@ class ChapaService {
 
 const chapa = new ChapaService();
 
-// ========== API ROUTES ==========
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ========== HEALTH CHECK - MUST BE FIRST ==========
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    mode: process.env.CHAPA_MODE || "test",
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get("/", (req, res) => {
+  res.json({
+    message: "MediFind Backend API is running!",
+    status: "online",
+    endpoints: {
+      health: "/health",
+      payments: "/api/payments/initiate",
+      callback: "/api/payments/callback",
+      verify: "/api/payments/verify/:reference"
+    }
+  });
+});
+
+/* =========================
+   PATIENT – SEARCH MEDICINE
+   ========================= */
 app.get("/api/medicines", async (req, res) => {
   try {
     const { name, dosage } = req.query;
@@ -176,6 +190,9 @@ app.get("/api/medicines", async (req, res) => {
   }
 });
 
+/* =========================
+   PHARMACIST – ADD MEDICINE
+   ========================= */
 app.post("/api/medicines", async (req, res) => {
   try {
     const medicine = req.body;
@@ -191,6 +208,9 @@ app.post("/api/medicines", async (req, res) => {
   }
 });
 
+/* =========================
+   DELIVERY ORDER
+   ========================= */
 app.post("/api/orders", async (req, res) => {
   try {
     const order = req.body;
@@ -207,6 +227,9 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
+/* =========================
+   ADMIN – GET ALL ORDERS
+   ========================= */
 app.get("/api/orders", async (req, res) => {
   try {
     const snapshot = await db.collection("orders").get();
@@ -220,6 +243,10 @@ app.get("/api/orders", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/* =========================
+   CHAPA PAYMENT ROUTES
+   ========================= */
 
 app.post("/api/payments/initiate", async (req, res) => {
   const { amount, email, phone, firstName, lastName, itemName, pharmacyId } = req.body;
@@ -263,6 +290,7 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
+// ========== CALLBACK ENDPOINT ==========
 app.get("/api/payments/callback", async (req, res) => {
   console.log("📞 Payment callback received (GET):", req.query);
   
@@ -337,20 +365,10 @@ app.post("/api/payments/callback", async (req, res) => {
   res.json({ received: true });
 });
 
-// ========== START SERVER - RAILWAY FIX ==========
+// ========== START SERVER ==========
 const PORT = process.env.PORT || 8080;
-
-// This is critical for Railway - must bind to 0.0.0.0
-const server = app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ MediFind backend running on port ${PORT}`);
   console.log(`💰 Chapa payment mode: test`);
   console.log(`📡 Callback endpoint: /api/payments/callback`);
-});
-
-// Handle graceful shutdown for Railway
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    console.log('HTTP server closed');
-  });
 });
