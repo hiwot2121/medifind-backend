@@ -4,19 +4,18 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 require("dotenv").config();
 
-// ========== FIREBASE CONFIGURATION USING ENVIRONMENT VARIABLES ==========
-// Instead of loading serviceAccountKey.json file, use environment variables
+// ========== FIREBASE CONFIGURATION - HARDCODED FOR RAILWAY ==========
 const serviceAccount = {
   type: "service_account",
-  project_id: process.env.FIREBASE_PROJECT_ID,
-  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  client_email: process.env.FIREBASE_CLIENT_EMAIL,
-  client_id: process.env.FIREBASE_CLIENT_ID,
+  project_id: "medifind-gondar-d27f7",
+  private_key_id: "f2ed81e978bcf28917d16be051933beab550ae71",
+  private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDXbnijFT4FLO+p\n4m3TSsoGLiBVEVVZ/py/ureZgJh7W16av7hp4RS8SAMBvNb5gFNoD6/Uju0PHG5b\nTPOkKPYzuZAw9gwcZc2kBFfnJhvUldnre1OGjbzfgTUyfhlhL5b5NMHQqBUoreMB\n++zFaxlrtr/akwbV+oRjA0G8ugzj8YtDenkyyazKtXF47Y3Ll+NRD8X7R41AZECJ\nlOdu/b0K7BS/zWfBPZElR1ufRsJSv6Ih7VQ3FAmdn0MqiKEfONTYmF0HQKWcauo5\nTy5Js+iqW+ZUiBmQgQz8q36bNs26HUEuT6T3KuoOKm3ha3Ain5HpPHQNqRYqzN6n\nK/9op4GfAgMBAAECggEAKSv+uEQ+ByUwZIpWrPP1Kjs0iK14X2uur2HS5u5Rtfmf\nWfncF7ghi15D3NgnSaXByvh8hSYPnjyzxpUtVylQ7E/Bg+nyJJc8NuVxm0aIOReu\nfzehneyGtTxvW0gIN6+trdDsXaFR8eVRpjZsaMpwIErb3b0NqGVpWbbsoFH6VrGg\nNEu0K241K3oEBbTSLXS2prkh55f5ByIDzCiYH7thjt2ka9zUG7ENyfq+L3GGpiDn\nFcs0xe8rCgAoofGhDPhkZg57k5kVUTau10RJP2a22orbiJiNWBZVz2TskuGFiAIL\nFWNdOUyWFrHIiD9TMZvQSLZFKaK9CGSKWnFhrc906QKBgQD0ET00gNv25QVwl5vT\naR3jHZhCFZ0AblQLDwn/Nhn7Fj/pzdQ/QXqM2ttjj0Df2oMviLt9LkeuQ1nMITPw\nvbTDbj0wXEo8OFQdjM2JRjgCPPo3fk4/piGWA6+SVNBhkO62roOm+zwikJEpDgys\nZMUieSqFP3Zo+GTbVNmuVNLiswKBgQDh9tMeU/uOVWIudw84tpX1lY8B47ThK7Ag\nQmNpt8PyzNpf7vvrByrrX+7rSMnP6wLOEddDPHg1o5UacfQNjPXdkpprrhOEyzRV\nOokIdNHXZjadvY3gsDB09GQFIgl0+tBqv5k/7Xc5EKkqdWTd7OymFMxMn3nkqn6v\nZhyulSArZQKBgDZhKOvr0ha+jGm7veJqx1f1HhmLS0HvUxZrsWSFn2BMYs0rKSE2\n66E6misinefCffw3UN7hUuNG6lkLBNGc0wvAIi4GQhwMyOEUoC730D7fazi2EaUo\n1M7h31qRPySd8DIPzBGGZK2m3FDzamt2wF2f9ZNewnk87uvXifDHwXz1AoGAB2jV\nkWgFlqw8FPP4fs6V6kCmONSjqMKK+vPSWLQa68pF2uF2R0Wr5Z32sqZnX7cAF4vE\nOEMyWefsSrqz2wHlSge1opRJtZAIPkc2GR3jh6GlZtTBYz3DyQH+iaCNGNXkoat4\ntfzubOOb+HVzAkfzlpqV/Gk6UQI6Nzws8piXPnUCgYB1trGVs1ML95sB/WqoFzfg\nNaUQCLPePVhNlICRYa81w7/s2E45+ZDqgROeDmRv1kXro7SaxhgXc0nVebGMj/7z\nt5D9SCUpBb/4Cbt7eGzl7ZJU+sVdHu912nBjDYn9fKM/5u4OZRdwVRcYs3duQl+A\nZOgmxwIDpLY8eF5Yg8hmEQ==\n-----END PRIVATE KEY-----\n",
+  client_email: "firebase-adminsdk-fbsvc@medifind-gondar-d27f7.iam.gserviceaccount.com",
+  client_id: "101419702510438472859",
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
   token_uri: "https://oauth2.googleapis.com/token",
   auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
+  client_x509_cert_url: "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40medifind-gondar-d27f7.iam.gserviceaccount.com"
 };
 
 admin.initializeApp({
@@ -28,81 +27,78 @@ const db = admin.firestore();
 // ========== CHAPA PAYMENT SERVICE ==========
 class ChapaService {
   constructor() {
-    this.secretKey = process.env.CHAPA_SECRET_KEY;
+    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-J8HK5CLTYaGbDpHbfIfKWMlt20aXylN6";
     this.baseUrl = process.env.CHAPA_API_URL || "https://api.chapa.co/v1";
     this.mode = process.env.CHAPA_MODE || "test";
   }
 
   async initializePayment(paymentData) {
-  try {
-    const shortPharmacyId = (paymentData.pharmacyId || 'unknown').substr(0, 8);
-    const timestamp = Date.now().toString().slice(-8);
-    const random = Math.random().toString(36).substr(2, 4);
-    const tx_ref = `MF_${shortPharmacyId}_${timestamp}_${random}`;
-    
-    console.log('📝 Generated tx_ref:', tx_ref, '(length:', tx_ref.length, 'chars)');
-
-    const payload = {
-      amount: paymentData.amount,
-      currency: "ETB",
-      email: paymentData.email,
-      first_name: paymentData.firstName || "Customer",
-      last_name: paymentData.lastName || "Name",
-      phone_number: paymentData.phone || "0912345678",
-      tx_ref: tx_ref,
-      callback_url: `${process.env.BASE_URL || "http://localhost:5000"}/api/payments/callback`,
-      return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pharmacy/payment-status`,
-      customization: {
-        title: "MediFind Payment",
-        description: this.mode === "test" ? "TEST MODE - No real money" : paymentData.description
-      }
-    };
-
-    console.log(`💰 Initializing ${this.mode} payment:`, payload.amount, "ETB");
-
-    const response = await axios.post(
-      `${this.baseUrl}/transaction/initialize`,
-      payload,
-      {
-        headers: {
-          "Authorization": `Bearer ${this.secretKey}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 30000
-      }
-    );
-
-    console.log('📡 Chapa response status:', response.data.status);
-    
-    // Log the FULL response to debug
-    console.log('📡 Full Chapa response:', JSON.stringify(response.data, null, 2));
-
-    if (response.data.status === "success") {
-      // Try different possible paths to get data
-      const data = response.data.data || response.data;
-      const checkoutUrl = data.checkout_url || data.checkoutUrl;
-      const returnedTxRef = data.tx_ref || data.reference || tx_ref;
+    try {
+      const shortPharmacyId = (paymentData.pharmacyId || 'unknown').substr(0, 8);
+      const timestamp = Date.now().toString().slice(-8);
+      const random = Math.random().toString(36).substr(2, 4);
+      const tx_ref = `MF_${shortPharmacyId}_${timestamp}_${random}`;
       
-      console.log('📝 Extracted checkoutUrl:', checkoutUrl);
-      console.log('📝 Extracted tx_ref:', returnedTxRef);
-      
-      return {
-        success: true,
-        checkoutUrl: checkoutUrl,
-        reference: returnedTxRef,
-        mode: this.mode
+      console.log('📝 Generated tx_ref:', tx_ref, '(length:', tx_ref.length, 'chars)');
+
+      const payload = {
+        amount: paymentData.amount,
+        currency: "ETB",
+        email: paymentData.email,
+        first_name: paymentData.firstName || "Customer",
+        last_name: paymentData.lastName || "Name",
+        phone_number: paymentData.phone || "0912345678",
+        tx_ref: tx_ref,
+        callback_url: `${process.env.BASE_URL || "https://medifind-backend.up.railway.app"}/api/payments/callback`,
+        return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pharmacy/payment-status`,
+        customization: {
+          title: "MediFind Payment",
+          description: this.mode === "test" ? "TEST MODE - No real money" : paymentData.description
+        }
       };
-    } else {
-      throw new Error(response.data.message || "Payment failed");
+
+      console.log(`💰 Initializing ${this.mode} payment:`, payload.amount, "ETB");
+
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        payload,
+        {
+          headers: {
+            "Authorization": `Bearer ${this.secretKey}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('📡 Chapa response status:', response.data.status);
+      console.log('📡 Full Chapa response:', JSON.stringify(response.data, null, 2));
+
+      if (response.data.status === "success") {
+        const data = response.data.data || response.data;
+        const checkoutUrl = data.checkout_url || data.checkoutUrl;
+        const returnedTxRef = data.tx_ref || data.reference || tx_ref;
+        
+        console.log('📝 Extracted checkoutUrl:', checkoutUrl);
+        console.log('📝 Extracted tx_ref:', returnedTxRef);
+        
+        return {
+          success: true,
+          checkoutUrl: checkoutUrl,
+          reference: returnedTxRef,
+          mode: this.mode
+        };
+      } else {
+        throw new Error(response.data.message || "Payment failed");
+      }
+    } catch (error) {
+      console.error("Chapa error:", error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
+      };
     }
-  } catch (error) {
-    console.error("Chapa error:", error.response?.data || error.message);
-    return {
-      success: false,
-      error: error.response?.data?.message || error.message
-    };
   }
-}
 
   async verifyPayment(reference) {
     try {
@@ -120,7 +116,6 @@ class ChapaService {
 
       console.log('🔍 Chapa verify response data:', JSON.stringify(response.data, null, 2));
 
-      // Check different possible response structures
       const data = response.data.data || response.data;
       const isSuccessful = data.status === 'success';
       
@@ -231,7 +226,6 @@ app.get("/api/orders", async (req, res) => {
    CHAPA PAYMENT ROUTES
    ========================= */
 
-// Initialize payment - call this from frontend
 app.post("/api/payments/initiate", async (req, res) => {
   const { amount, email, phone, firstName, lastName, itemName, pharmacyId } = req.body;
 
@@ -266,7 +260,6 @@ app.post("/api/payments/initiate", async (req, res) => {
   }
 });
 
-// Verify payment - check if payment was successful
 app.get("/api/payments/verify/:reference", async (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verify endpoint called for:', reference);
@@ -275,50 +268,56 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
-// ========== CHAPA WEBHOOK - SAVES PAYMENT TO DATABASE ==========
-app.post("/api/payments/chapa-webhook", async (req, res) => {
-  console.log("📞 Chapa webhook received:", req.body);
+// ========== CALLBACK ENDPOINT ==========
+app.get("/api/payments/callback", async (req, res) => {
+  console.log("📞 Payment callback received (GET):", req.query);
   
-  const { tx_ref, status, amount, email } = req.body;
+  const { trx_ref, status, amount, ref_id } = req.query;
+  const tx_ref = trx_ref;
+  
+  console.log(`🔍 Extracted: tx_ref=${tx_ref}, status=${status}, amount=${amount}`);
   
   if (status === 'success') {
     try {
-      // Extract pharmacyId from shortened tx_ref (format: MF_pharmacyId_timestamp_random)
+      if (!tx_ref) {
+        console.error('❌ No transaction reference found');
+        return res.json({ received: true, error: 'No transaction reference' });
+      }
+      
       const parts = tx_ref.split('_');
       const shortPharmacyId = parts[1];
       
-      console.log(`✅ Processing successful payment for short pharmacy ID: ${shortPharmacyId}`);
+      console.log(`🔍 Looking for pharmacy with ID starting with: ${shortPharmacyId}`);
       
-      // Find the full pharmacy ID by matching the start
+      const pharmaciesSnapshot = await db.collection('pharmacies').get();
+      
       let fullPharmacyId = null;
       let pharmacyData = null;
       
-      const pharmaciesSnapshot = await db.collection('pharmacies').get();
       for (const doc of pharmaciesSnapshot.docs) {
         if (doc.id.startsWith(shortPharmacyId)) {
           fullPharmacyId = doc.id;
           pharmacyData = doc.data();
+          console.log(`✅ Found pharmacy: ${pharmacyData.name}`);
           break;
         }
       }
       
       if (!pharmacyData) {
-        console.error(`Pharmacy not found for short ID: ${shortPharmacyId}`);
+        console.error(`❌ Pharmacy not found`);
         return res.json({ received: true, error: 'Pharmacy not found' });
       }
       
-      console.log(`✅ Found pharmacy: ${pharmacyData.name} (${fullPharmacyId})`);
+      let actualAmount = amount ? parseFloat(amount) : 500;
       
-      // Determine plan type from amount
       let planType = 'monthly';
-      if (amount === 1425) planType = 'quarterly';
-      else if (amount === 5100) planType = 'annual';
+      if (actualAmount === 1425) planType = 'quarterly';
+      else if (actualAmount === 5100) planType = 'annual';
       
-      // Save payment to database
       const paymentData = {
         pharmacyId: fullPharmacyId,
         pharmacyName: pharmacyData.name || 'Unknown',
-        amount: parseFloat(amount),
+        amount: actualAmount,
         planType: planType,
         paymentMethod: 'chapa',
         status: 'approved',
@@ -329,98 +328,32 @@ app.post("/api/payments/chapa-webhook", async (req, res) => {
       };
       
       await db.collection('subscription_payments').add(paymentData);
-      console.log('✅ Chapa payment saved to database');
-      
-      // Update or create subscription
-      const subscriptionQuery = await db.collection('subscriptions')
-        .where('pharmacyId', '==', fullPharmacyId)
-        .get();
-      
-      const newEndDate = new Date();
-      let daysToAdd = 0;
-      switch(planType) {
-        case 'monthly': daysToAdd = 30; break;
-        case 'quarterly': daysToAdd = 90; break;
-        case 'annual': daysToAdd = 365; break;
-        default: daysToAdd = 30;
-      }
-      newEndDate.setDate(newEndDate.getDate() + daysToAdd);
-      
-      if (!subscriptionQuery.empty) {
-        const subDoc = subscriptionQuery.docs[0];
-        await db.collection('subscriptions').doc(subDoc.id).update({
-          status: 'active',
-          planType: planType,
-          endDate: admin.firestore.Timestamp.fromDate(newEndDate),
-          lastPaymentDate: admin.firestore.Timestamp.now(),
-          updatedAt: admin.firestore.Timestamp.now()
-        });
-        console.log('✅ Subscription updated');
-      } else {
-        await db.collection('subscriptions').add({
-          pharmacyId: fullPharmacyId,
-          pharmacyName: pharmacyData.name,
-          planType: planType,
-          status: 'active',
-          startDate: admin.firestore.Timestamp.now(),
-          endDate: admin.firestore.Timestamp.fromDate(newEndDate),
-          lastPaymentDate: admin.firestore.Timestamp.now(),
-          createdAt: admin.firestore.Timestamp.now()
-        });
-        console.log('✅ New subscription created');
-      }
-      
-      // Update pharmacy status
-      await db.collection('pharmacies').doc(fullPharmacyId).update({
-        status: 'approved',
-        isVerified: true,
-        updatedAt: admin.firestore.Timestamp.now()
-      });
-      
-      // Send notification to pharmacy
-      await db.collection('pharmacy_notifications').add({
-        pharmacyId: fullPharmacyId,
-        type: 'payment_approved',
-        title: '✅ Payment Successful!',
-        message: `Your Chapa payment of ${amount} ETB for ${planType} plan has been confirmed. Your subscription is now active.`,
-        isRead: false,
-        createdAt: admin.firestore.Timestamp.now()
-      });
-      
-      console.log('✅ Notification sent to pharmacy');
+      console.log('✅ Payment saved to subscription_payments');
       
     } catch (error) {
-      console.error('Error saving Chapa payment:', error);
+      console.error('❌ Error saving payment:', error);
     }
-  } else {
-    console.log(`⚠️ Payment not successful. Status: ${status}`);
   }
   
   res.json({ received: true });
 });
 
-// Callback endpoint - Chapa calls this automatically (legacy)
 app.post("/api/payments/callback", async (req, res) => {
-  console.log("📞 Payment callback received:", req.body);
+  console.log("📞 Payment callback received (POST):", req.body);
   res.json({ received: true });
 });
 
-// Health check endpoint
 app.get("/health", (req, res) => {
   res.json({ 
     status: "OK", 
-    mode: process.env.CHAPA_MODE || "test",
+    mode: "test",
     timestamp: new Date().toISOString()
   });
 });
 
-/* =========================
-   START SERVER
-   ========================= */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ MediFind backend running on port ${PORT}`);
-  console.log(`💰 Chapa payment mode: ${process.env.CHAPA_MODE || "test"}`);
-  console.log(`🔑 Chapa configured: ${process.env.CHAPA_SECRET_KEY ? "YES" : "NO"}`);
-  console.log(`📡 Webhook endpoint: /api/payments/chapa-webhook`);
+  console.log(`💰 Chapa payment mode: test`);
+  console.log(`📡 Callback endpoint: /api/payments/callback`);
 });
