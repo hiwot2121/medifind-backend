@@ -49,7 +49,7 @@ class ChapaService {
         last_name: paymentData.lastName || "Name",
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
-        callback_url: `${process.env.BASE_URL || "https://medifind-backend.up.railway.app"}/api/payments/callback`,
+        callback_url: `https://medifind-backend.up.railway.app/api/payments/callback`,
         return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pharmacy/payment-status`,
         customization: {
           title: "MediFind Payment",
@@ -143,6 +143,20 @@ const chapa = new ChapaService();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ========== ROOT ROUTE FOR RAILWAY ==========
+app.get("/", (req, res) => {
+  res.json({
+    message: "MediFind Backend API is running!",
+    status: "online",
+    endpoints: {
+      health: "/health",
+      payments: "/api/payments/initiate",
+      callback: "/api/payments/callback",
+      verify: "/api/payments/verify/:reference"
+    }
+  });
+});
 
 /* =========================
    PATIENT – SEARCH MEDICINE
@@ -343,6 +357,7 @@ app.post("/api/payments/callback", async (req, res) => {
   res.json({ received: true });
 });
 
+// Health check endpoint
 app.get("/health", (req, res) => {
   res.json({ 
     status: "OK", 
@@ -351,8 +366,9 @@ app.get("/health", (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+// ========== START SERVER ==========
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ MediFind backend running on port ${PORT}`);
   console.log(`💰 Chapa payment mode: test`);
   console.log(`📡 Callback endpoint: /api/payments/callback`);
