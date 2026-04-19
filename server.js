@@ -4,7 +4,21 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 require("dotenv").config();
 
-// ========== FIREBASE CONFIGURATION - HARDCODED FOR RAILWAY ==========
+// ========== CREATE APP FIRST ==========
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ========== IMMEDIATE HEALTH CHECK - MUST BE FIRST AND FAST ==========
+app.get("/health", (req, res) => {
+  return res.status(200).json({ status: "OK", mode: process.env.CHAPA_MODE || "test" });
+});
+
+app.get("/", (req, res) => {
+  return res.status(200).json({ message: "MediFind Backend is running!" });
+});
+
+// ========== FIREBASE CONFIGURATION ==========
 const serviceAccount = {
   type: "service_account",
   project_id: "medifind-gondar-d27f7",
@@ -140,36 +154,7 @@ class ChapaService {
 
 const chapa = new ChapaService();
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// ========== HEALTH CHECK - MUST BE FIRST AND FAST ==========
-app.get("/health", (req, res) => {
-  res.status(200).json({ 
-    status: "OK", 
-    mode: process.env.CHAPA_MODE || "test",
-    timestamp: new Date().toISOString()
-  });
-});
-
 // ========== ROOT ROUTE ==========
-app.get("/", (req, res) => {
-  res.json({
-    message: "MediFind Backend API is running!",
-    status: "online",
-    endpoints: {
-      health: "/health",
-      payments: "/api/payments/initiate",
-      callback: "/api/payments/callback",
-      verify: "/api/payments/verify/:reference"
-    }
-  });
-});
-
-/* =========================
-   PATIENT – SEARCH MEDICINE
-   ========================= */
 app.get("/api/medicines", async (req, res) => {
   try {
     const { name, dosage } = req.query;
