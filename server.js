@@ -49,8 +49,8 @@ class ChapaService {
         last_name: paymentData.lastName || "Name",
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
-        callback_url: `${process.env.BASE_URL || "http://localhost:5000"}/api/payments/callback`,
-        return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pharmacy/payment-status`,
+        callback_url: `https://medifind-backend-0raf.onrender.com/api/payments/callback`,
+        return_url: `https://medifind-gondar-d27f7.web.app/pharmacy/payment-status`,
         customization: {
           title: "MediFind Payment",
           description: this.mode === "test" ? "TEST MODE - No real money" : paymentData.description
@@ -290,19 +290,39 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
-// ========== CALLBACK ENDPOINT - FIXED FOR NGORK ==========
-// IMPORTANT: Chapa sends 'trx_ref' (with an 'r') not 'tx_ref'
+// ========== CALLBACK ENDPOINT - FIXED ==========
+// Fetches correct amount from Chapa Verify API
 app.get("/api/payments/callback", async (req, res) => {
   console.log("📞 Payment callback received (GET):", req.query);
   
   // Chapa sends 'trx_ref' - note the 'r'
-  const { trx_ref, status, amount, ref_id } = req.query;
-  const tx_ref = trx_ref;  // Use the correct parameter name
+  const { trx_ref, status, ref_id } = req.query;
+  const tx_ref = trx_ref;
   
-  console.log(`🔍 Extracted: tx_ref=${tx_ref}, status=${status}, amount=${amount}`);
+  console.log(`🔍 Extracted: tx_ref=${tx_ref}, status=${status}`);
   
   if (status === 'success' && tx_ref) {
     try {
+      // ========== FETCH CORRECT AMOUNT FROM CHAPA VERIFY API ==========
+      console.log(`🔍 Fetching payment details from Chapa for: ${tx_ref}`);
+      
+      const verifyResponse = await axios.get(
+        `https://api.chapa.co/v1/transaction/verify/${tx_ref}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${process.env.CHAPA_SECRET_KEY}`
+          }
+        }
+      );
+      
+      const correctAmount = verifyResponse.data.data?.amount;
+      console.log(`💰 Correct amount from Chapa API: ${correctAmount}`);
+      
+      if (!correctAmount) {
+        console.error(`❌ Could not fetch amount from Chapa`);
+        return res.json({ received: true, error: 'Could not fetch amount' });
+      }
+      
       const parts = tx_ref.split('_');
       const shortPharmacyId = parts[1];
       
@@ -328,17 +348,18 @@ app.get("/api/payments/callback", async (req, res) => {
         return res.json({ received: true, error: 'Pharmacy not found' });
       }
       
-      let actualAmount = amount ? parseFloat(amount) : 500;
-      
+      // Determine plan type from CORRECT amount
       let planType = 'monthly';
-      if (actualAmount === 1425) planType = 'quarterly';
-      else if (actualAmount === 5100) planType = 'annual';
+      if (correctAmount === 1425) planType = 'quarterly';
+      else if (correctAmount === 5100) planType = 'annual';
+      
+      console.log(`📋 Plan type: ${planType}, Amount: ${correctAmount}`);
       
       // SAVE TO DATABASE
       const paymentData = {
         pharmacyId: fullPharmacyId,
         pharmacyName: pharmacyData.name || 'Unknown',
-        amount: actualAmount,
+        amount: correctAmount,
         planType: planType,
         paymentMethod: 'chapa',
         status: 'approved',
@@ -366,6 +387,7 @@ app.get("/api/payments/callback", async (req, res) => {
           status: 'active',
           planType: planType,
           endDate: admin.firestore.Timestamp.fromDate(newEndDate),
+          lastPaymentDate: admin.firestore.Timestamp.now(),
           updatedAt: admin.firestore.Timestamp.now()
         });
         console.log('✅ Subscription updated');
@@ -377,10 +399,30 @@ app.get("/api/payments/callback", async (req, res) => {
           status: 'active',
           startDate: admin.firestore.Timestamp.now(),
           endDate: admin.firestore.Timestamp.fromDate(newEndDate),
+          lastPaymentDate: admin.firestore.Timestamp.now(),
           createdAt: admin.firestore.Timestamp.now()
         });
         console.log('✅ New subscription created');
       }
+      
+      // Update pharmacy status
+      await db.collection('pharmacies').doc(fullPharmacyId).update({
+        status: 'approved',
+        isVerified: true,
+        updatedAt: admin.firestore.Timestamp.now()
+      });
+      
+      // Send notification to pharmacy
+      await db.collection('pharmacy_notifications').add({
+        pharmacyId: fullPharmacyId,
+        type: 'payment_approved',
+        title: '✅ Payment Successful!',
+        message: `Your payment of ${correctAmount} ETB for ${planType} plan has been confirmed. Your subscription is now active.`,
+        isRead: false,
+        createdAt: admin.firestore.Timestamp.now()
+      });
+      
+      console.log('✅ Notification sent to pharmacy');
       
     } catch (error) {
       console.error('❌ Error saving payment:', error);
