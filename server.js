@@ -4,18 +4,18 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 require("dotenv").config();
 
-// ========== FIREBASE CONFIGURATION USING ENVIRONMENT VARIABLES ==========
+// ========== FIREBASE CONFIGURATION - HARDCODED ==========
 const serviceAccount = {
   type: "service_account",
-  project_id: process.env.FIREBASE_PROJECT_ID,
-  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  client_email: process.env.FIREBASE_CLIENT_EMAIL,
-  client_id: process.env.FIREBASE_CLIENT_ID,
+  project_id: "medifind-gondar-d27f7",
+  private_key_id: "f2ed81e978bcf28917d16be051933beab550ae71",
+  private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDXbnijFT4FLO+p\n4m3TSsoGLiBVEVVZ/py/ureZgJh7W16av7hp4RS8SAMBvNb5gFNoD6/Uju0PHG5b\nTPOkKPYzuZAw9gwcZc2kBFfnJhvUldnre1OGjbzfgTUyfhlhL5b5NMHQqBUoreMB\n++zFaxlrtr/akwbV+oRjA0G8ugzj8YtDenkyyazKtXF47Y3Ll+NRD8X7R41AZECJ\nlOdu/b0K7BS/zWfBPZElR1ufRsJSv6Ih7VQ3FAmdn0MqiKEfONTYmF0HQKWcauo5\nTy5Js+iqW+ZUiBmQgQz8q36bNs26HUEuT6T3KuoOKm3ha3Ain5HpPHQNqRYqzN6n\nK/9op4GfAgMBAAECggEAKSv+uEQ+ByUwZIpWrPP1Kjs0iK14X2uur2HS5u5Rtfmf\nWfncF7ghi15D3NgnSaXByvh8hSYPnjyzxpUtVylQ7E/Bg+nyJJc8NuVxm0aIOReu\nfzehneyGtTxvW0gIN6+trdDsXaFR8eVRpjZsaMpwIErb3b0NqGVpWbbsoFH6VrGg\nNEu0K241K3oEBbTSLXS2prkh55f5ByIDzCiYH7thjt2ka9zUG7ENyfq+L3GGpiDn\nFcs0xe8rCgAoofGhDPhkZg57k5kVUTau10RJP2a22orbiJiNWBZVz2TskuGFiAIL\nFWNdOUyWFrHIiD9TMZvQSLZFKaK9CGSKWnFhrc906QKBgQD0ET00gNv25QVwl5vT\naR3jHZhCFZ0AblQLDwn/Nhn7Fj/pzdQ/QXqM2ttjj0Df2oMviLt9LkeuQ1nMITPw\nvbTDbj0wXEo8OFQdjM2JRjgCPPo3fk4/piGWA6+SVNBhkO62roOm+zwikJEpDgys\nZMUieSqFP3Zo+GTbVNmuVNLiswKBgQDh9tMeU/uOVWIudw84tpX1lY8B47ThK7Ag\nQmNpt8PyzNpf7vvrByrrX+7rSMnP6wLOEddDPHg1o5UacfQNjPXdkpprrhOEyzRV\nOokIdNHXZjadvY3gsDB09GQFIgl0+tBqv5k/7Xc5EKkqdWTd7OymFMxMn3nkqn6v\nZhyulSArZQKBgDZhKOvr0ha+jGm7veJqx1f1HhmLS0HvUxZrsWSFn2BMYs0rKSE2\n66E6misinefCffw3UN7hUuNG6lkLBNGc0wvAIi4GQhwMyOEUoC730D7fazi2EaUo\n1M7h31qRPySd8DIPzBGGZK2m3FDzamt2wF2f9ZNewnk87uvXifDHwXz1AoGAB2jV\nkWgFlqw8FPP4fs6V6kCmONSjqMKK+vPSWLQa68pF2uF2R0Wr5Z32sqZnX7cAF4vE\nOEMyWefsSrqz2wHlSge1opRJtZAIPkc2GR3jh6GlZtTBYz3DyQH+iaCNGNXkoat4\ntfzubOOb+HVzAkfzlpqV/Gk6UQI6Nzws8piXPnUCgYB1trGVs1ML95sB/WqoFzfg\nNaUQCLPePVhNlICRYa81w7/s2E45+ZDqgROeDmRv1kXro7SaxhgXc0nVebGMj/7z\nt5D9SCUpBb/4Cbt7eGzl7ZJU+sVdHu912nBjDYn9fKM/5u4OZRdwVRcYs3duQl+A\nZOgmxwIDpLY8eF5Yg8hmEQ==\n-----END PRIVATE KEY-----\n",
+  client_email: "firebase-adminsdk-fbsvc@medifind-gondar-d27f7.iam.gserviceaccount.com",
+  client_id: "101419702510438472859",
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
   token_uri: "https://oauth2.googleapis.com/token",
   auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
+  client_x509_cert_url: "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40medifind-gondar-d27f7.iam.gserviceaccount.com"
 };
 
 admin.initializeApp({
@@ -27,9 +27,9 @@ const db = admin.firestore();
 // ========== CHAPA PAYMENT SERVICE ==========
 class ChapaService {
   constructor() {
-    this.secretKey = process.env.CHAPA_SECRET_KEY;
-    this.baseUrl = process.env.CHAPA_API_URL || "https://api.chapa.co/v1";
-    this.mode = process.env.CHAPA_MODE || "test";
+    this.secretKey = "CHASECK_TEST-J8HK5CLTYaGbDpHbfIfKWMlt20aXylN6";
+    this.baseUrl = "https://api.chapa.co/v1";
+    this.mode = "test";
   }
 
   async initializePayment(paymentData) {
@@ -148,7 +148,7 @@ app.use(express.json());
 app.get("/health", (req, res) => {
   res.json({ 
     status: "OK", 
-    mode: process.env.CHAPA_MODE || "test",
+    mode: "test",
     timestamp: new Date().toISOString()
   });
 });
@@ -290,12 +290,10 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
-// ========== CALLBACK ENDPOINT - FIXED ==========
-// Fetches correct amount from Chapa Verify API
+// ========== CALLBACK ENDPOINT - FIXED FOR ALL AMOUNTS ==========
 app.get("/api/payments/callback", async (req, res) => {
   console.log("📞 Payment callback received (GET):", req.query);
   
-  // Chapa sends 'trx_ref' - note the 'r'
   const { trx_ref, status, ref_id } = req.query;
   const tx_ref = trx_ref;
   
@@ -303,24 +301,45 @@ app.get("/api/payments/callback", async (req, res) => {
   
   if (status === 'success' && tx_ref) {
     try {
-      // ========== FETCH CORRECT AMOUNT FROM CHAPA VERIFY API ==========
-      console.log(`🔍 Fetching payment details from Chapa for: ${tx_ref}`);
-      
+      // Fetch correct amount from Chapa
       const verifyResponse = await axios.get(
         `https://api.chapa.co/v1/transaction/verify/${tx_ref}`,
         {
           headers: {
-            "Authorization": `Bearer ${process.env.CHAPA_SECRET_KEY}`
+            "Authorization": `Bearer ${this.secretKey}`
           }
         }
       );
       
-      const correctAmount = verifyResponse.data.data?.amount;
-      console.log(`💰 Correct amount from Chapa API: ${correctAmount}`);
+      let correctAmount = verifyResponse.data.data?.amount;
+      console.log(`💰 Raw amount from Chapa API: ${correctAmount}`);
       
-      if (!correctAmount) {
-        console.error(`❌ Could not fetch amount from Chapa`);
+      // Convert to number if it's a string
+      if (typeof correctAmount === 'string') {
+        correctAmount = parseFloat(correctAmount);
+      }
+      
+      console.log(`💰 Parsed amount: ${correctAmount}`);
+      
+      if (!correctAmount || isNaN(correctAmount)) {
+        console.error(`❌ Could not fetch valid amount from Chapa`);
         return res.json({ received: true, error: 'Could not fetch amount' });
+      }
+      
+      // Flexible plan type detection using ranges
+      let planType = 'monthly';
+      let daysToAdd = 30;
+      
+      if (correctAmount >= 1400 && correctAmount <= 1450) {
+        planType = 'quarterly';
+        daysToAdd = 90;
+        console.log(`✅ Detected QUARTERLY plan (amount: ${correctAmount})`);
+      } else if (correctAmount >= 5000 && correctAmount <= 5200) {
+        planType = 'annual';
+        daysToAdd = 365;
+        console.log(`✅ Detected ANNUAL plan (amount: ${correctAmount})`);
+      } else {
+        console.log(`✅ Detected MONTHLY plan (amount: ${correctAmount})`);
       }
       
       const parts = tx_ref.split('_');
@@ -329,7 +348,6 @@ app.get("/api/payments/callback", async (req, res) => {
       console.log(`🔍 Looking for pharmacy with ID starting with: ${shortPharmacyId}`);
       
       const pharmaciesSnapshot = await db.collection('pharmacies').get();
-      console.log(`📊 Found ${pharmaciesSnapshot.size} pharmacies`);
       
       let fullPharmacyId = null;
       let pharmacyData = null;
@@ -338,22 +356,17 @@ app.get("/api/payments/callback", async (req, res) => {
         if (doc.id.startsWith(shortPharmacyId)) {
           fullPharmacyId = doc.id;
           pharmacyData = doc.data();
-          console.log(`✅ Found pharmacy: ${pharmacyData.name} (${fullPharmacyId})`);
+          console.log(`✅ Found pharmacy: ${pharmacyData.name}`);
           break;
         }
       }
       
       if (!pharmacyData) {
-        console.error(`❌ Pharmacy not found for short ID: ${shortPharmacyId}`);
+        console.error(`❌ Pharmacy not found`);
         return res.json({ received: true, error: 'Pharmacy not found' });
       }
       
-      // Determine plan type from CORRECT amount
-      let planType = 'monthly';
-      if (correctAmount === 1425) planType = 'quarterly';
-      else if (correctAmount === 5100) planType = 'annual';
-      
-      console.log(`📋 Plan type: ${planType}, Amount: ${correctAmount}`);
+      console.log(`📋 Plan: ${planType}, Days: ${daysToAdd}, Amount: ${correctAmount}`);
       
       // SAVE TO DATABASE
       const paymentData = {
@@ -378,7 +391,6 @@ app.get("/api/payments/callback", async (req, res) => {
         .get();
       
       const newEndDate = new Date();
-      let daysToAdd = planType === 'monthly' ? 30 : (planType === 'quarterly' ? 90 : 365);
       newEndDate.setDate(newEndDate.getDate() + daysToAdd);
       
       if (!subscriptionQuery.empty) {
@@ -390,7 +402,7 @@ app.get("/api/payments/callback", async (req, res) => {
           lastPaymentDate: admin.firestore.Timestamp.now(),
           updatedAt: admin.firestore.Timestamp.now()
         });
-        console.log('✅ Subscription updated');
+        console.log(`✅ Subscription updated to ${planType}`);
       } else {
         await db.collection('subscriptions').add({
           pharmacyId: fullPharmacyId,
@@ -402,7 +414,7 @@ app.get("/api/payments/callback", async (req, res) => {
           lastPaymentDate: admin.firestore.Timestamp.now(),
           createdAt: admin.firestore.Timestamp.now()
         });
-        console.log('✅ New subscription created');
+        console.log(`✅ New subscription created for ${planType}`);
       }
       
       // Update pharmacy status
@@ -412,17 +424,17 @@ app.get("/api/payments/callback", async (req, res) => {
         updatedAt: admin.firestore.Timestamp.now()
       });
       
-      // Send notification to pharmacy
+      // Send notification
       await db.collection('pharmacy_notifications').add({
         pharmacyId: fullPharmacyId,
         type: 'payment_approved',
         title: '✅ Payment Successful!',
-        message: `Your payment of ${correctAmount} ETB for ${planType} plan has been confirmed. Your subscription is now active.`,
+        message: `Your payment of ${correctAmount} ETB for ${planType} plan has been confirmed. Your subscription is active for ${daysToAdd} days.`,
         isRead: false,
         createdAt: admin.firestore.Timestamp.now()
       });
       
-      console.log('✅ Notification sent to pharmacy');
+      console.log('✅ Notification sent');
       
     } catch (error) {
       console.error('❌ Error saving payment:', error);
@@ -444,7 +456,7 @@ app.post("/api/payments/callback", async (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ MediFind backend running on port ${PORT}`);
-  console.log(`💰 Chapa payment mode: ${process.env.CHAPA_MODE || "test"}`);
-  console.log(`🔑 Chapa configured: ${process.env.CHAPA_SECRET_KEY ? "YES" : "NO"}`);
+  console.log(`💰 Chapa payment mode: test`);
+  console.log(`🔑 Chapa configured: YES`);
   console.log(`📡 Callback endpoint: /api/payments/callback`);
 });
