@@ -39,7 +39,7 @@ class ChapaService {
       const random = Math.random().toString(36).substr(2, 4);
       const tx_ref = `MF_${shortPharmacyId}_${timestamp}_${random}`;
       
-      console.log('📝 Generated tx_ref:', tx_ref, '(length:', tx_ref.length, 'chars)');
+      console.log('📝 Generated tx_ref:', tx_ref);
 
       const payload = {
         amount: paymentData.amount,
@@ -57,7 +57,7 @@ class ChapaService {
         }
       };
 
-      console.log(`💰 Initializing ${this.mode} payment:`, payload.amount, "ETB");
+      console.log(`💰 Initializing payment: ${payload.amount} ETB`);
 
       const response = await axios.post(
         `${this.baseUrl}/transaction/initialize`,
@@ -71,21 +71,11 @@ class ChapaService {
         }
       );
 
-      console.log('📡 Chapa response status:', response.data.status);
-      console.log('📡 Full Chapa response:', JSON.stringify(response.data, null, 2));
-
       if (response.data.status === "success") {
-        const data = response.data.data || response.data;
-        const checkoutUrl = data.checkout_url || data.checkoutUrl;
-        const returnedTxRef = data.tx_ref || data.reference || tx_ref;
-        
-        console.log('📝 Extracted checkoutUrl:', checkoutUrl);
-        console.log('📝 Extracted tx_ref:', returnedTxRef);
-        
         return {
           success: true,
-          checkoutUrl: checkoutUrl,
-          reference: returnedTxRef,
+          checkoutUrl: response.data.data.checkout_url,
+          reference: tx_ref,
           mode: this.mode
         };
       } else {
@@ -102,8 +92,6 @@ class ChapaService {
 
   async verifyPayment(reference) {
     try {
-      console.log('🔍 Calling Chapa verify API for:', reference);
-      
       const response = await axios.get(
         `${this.baseUrl}/transaction/verify/${reference}`,
         {
@@ -114,23 +102,17 @@ class ChapaService {
         }
       );
 
-      console.log('🔍 Chapa verify response data:', JSON.stringify(response.data, null, 2));
-
       const data = response.data.data || response.data;
-      const isSuccessful = data.status === 'success';
-      
       return {
-        success: isSuccessful,
+        success: data.status === 'success',
         status: data.status || 'failed',
         amount: data.amount || 0,
-        reference: reference,
-        message: isSuccessful ? 'Payment verified successfully' : 'Payment not successful'
+        reference: reference
       };
     } catch (error) {
-      console.error('Verify error:', error.response?.data || error.message);
       return {
         success: false,
-        error: error.response?.data?.message || error.message,
+        error: error.message,
         status: 'failed',
         reference: reference
       };
@@ -139,125 +121,83 @@ class ChapaService {
 }
 
 const chapa = new ChapaService();
-
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ========== HEALTH CHECK ==========
 app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    mode: "test",
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: "OK", mode: "test", timestamp: new Date().toISOString() });
 });
 
 app.get("/", (req, res) => {
-  res.json({
-    message: "MediFind Backend API is running!",
-    status: "online",
-    endpoints: {
-      health: "/health",
-      payments: "/api/payments/initiate",
-      callback: "/api/payments/callback",
-      verify: "/api/payments/verify/:reference"
-    }
-  });
+  res.json({ message: "MediFind Backend API is running!" });
 });
 
-/* =========================
-   PATIENT – SEARCH MEDICINE
-   ========================= */
+// ========== TEST WEBHOOK ENDPOINT ==========
+app.get("/api/payments/test", (req, res) => {
+  console.log("✅ Test endpoint reached!");
+  res.json({ success: true, message: "Webhook test successful", query: req.query });
+});
+
+// ========== API ROUTES ==========
 app.get("/api/medicines", async (req, res) => {
   try {
     const { name, dosage } = req.query;
-
     let query = db.collection("medicines");
-
     if (name) query = query.where("name", "==", name);
     if (dosage) query = query.where("dosage", "==", dosage);
-
     const snapshot = await query.get();
-    const medicines = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
+    const medicines = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json(medicines);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* =========================
-   PHARMACIST – ADD MEDICINE
-   ========================= */
 app.post("/api/medicines", async (req, res) => {
   try {
     const medicine = req.body;
-
     await db.collection("medicines").add({
       ...medicine,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-
     res.json({ message: "Medicine added successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* =========================
-   DELIVERY ORDER
-   ========================= */
 app.post("/api/orders", async (req, res) => {
   try {
     const order = req.body;
-
     await db.collection("orders").add({
       ...order,
       status: "Pending",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-
     res.json({ message: "Order placed successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* =========================
-   ADMIN – GET ALL ORDERS
-   ========================= */
 app.get("/api/orders", async (req, res) => {
   try {
     const snapshot = await db.collection("orders").get();
-    const orders = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
+    const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* =========================
-   CHAPA PAYMENT ROUTES
-   ========================= */
-
+// ========== PAYMENT ROUTES ==========
 app.post("/api/payments/initiate", async (req, res) => {
   const { amount, email, phone, firstName, lastName, itemName, pharmacyId } = req.body;
 
-  console.log('📥 Payment initiation request:', { amount, email, pharmacyId });
-
   if (!amount || !email) {
-    return res.status(400).json({
-      success: false,
-      error: "Amount and email are required"
-    });
+    return res.status(400).json({ success: false, error: "Amount and email are required" });
   }
 
   try {
@@ -270,193 +210,152 @@ app.post("/api/payments/initiate", async (req, res) => {
       description: itemName || "MediFind Payment",
       pharmacyId: pharmacyId
     });
-
-    console.log('📤 Payment initiation result:', result);
     res.json(result);
   } catch (error) {
-    console.error('❌ Payment initiation error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || "Payment initialization failed"
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 app.get("/api/payments/verify/:reference", async (req, res) => {
   const { reference } = req.params;
-  console.log('🔍 Verify endpoint called for:', reference);
   const result = await chapa.verifyPayment(reference);
-  console.log('📤 Verify result:', result);
   res.json(result);
 });
 
-// ========== CALLBACK ENDPOINT - FIXED FOR ALL AMOUNTS ==========
+// ========== WEBHOOK CALLBACK - BOTH GET AND POST ==========
 app.get("/api/payments/callback", async (req, res) => {
-  console.log("📞 Payment callback received (GET):", req.query);
+  console.log("📞 GET Callback received:", req.query);
+  await processPayment(req.query, res);
+});
+
+app.post("/api/payments/callback", async (req, res) => {
+  console.log("📞 POST Callback received:", req.body);
+  await processPayment(req.body, res);
+});
+
+async function processPayment(data, res) {
+  const { trx_ref, tx_ref, status, amount } = data;
+  const transactionRef = trx_ref || tx_ref;
   
-  const { trx_ref, status, ref_id } = req.query;
-  const tx_ref = trx_ref;
-  
-  console.log(`🔍 Extracted: tx_ref=${tx_ref}, status=${status}`);
-  
-  if (status === 'success' && tx_ref) {
-    try {
-      // Fetch correct amount from Chapa
-      const verifyResponse = await axios.get(
-        `https://api.chapa.co/v1/transaction/verify/${tx_ref}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${this.secretKey}`
-          }
-        }
-      );
-      
-      let correctAmount = verifyResponse.data.data?.amount;
-      console.log(`💰 Raw amount from Chapa API: ${correctAmount}`);
-      
-      // Convert to number if it's a string
-      if (typeof correctAmount === 'string') {
-        correctAmount = parseFloat(correctAmount);
+  console.log(`🔍 Processing: ref=${transactionRef}, status=${status}, amount=${amount}`);
+
+  if (status !== 'success' || !transactionRef) {
+    console.log(`⚠️ Not processing: status=${status}, ref=${transactionRef}`);
+    return res.json({ received: true });
+  }
+
+  try {
+    // Fetch correct amount from Chapa
+    const verifyResponse = await axios.get(
+      `https://api.chapa.co/v1/transaction/verify/${transactionRef}`,
+      { headers: { "Authorization": `Bearer ${chapa.secretKey}` } }
+    );
+    
+    const correctAmount = verifyResponse.data.data?.amount;
+    console.log(`💰 Correct amount: ${correctAmount}`);
+
+    // Determine plan type using ranges
+    let planType = 'monthly';
+    let daysToAdd = 30;
+    
+    if (correctAmount >= 1400 && correctAmount <= 1450) {
+      planType = 'quarterly';
+      daysToAdd = 90;
+    } else if (correctAmount >= 5000 && correctAmount <= 5200) {
+      planType = 'annual';
+      daysToAdd = 365;
+    }
+
+    // Extract pharmacy ID from transaction reference
+    const parts = transactionRef.split('_');
+    const shortPharmacyId = parts[1];
+    
+    // Find full pharmacy
+    let fullPharmacyId = null;
+    let pharmacyData = null;
+    const pharmaciesSnapshot = await db.collection('pharmacies').get();
+    
+    for (const doc of pharmaciesSnapshot.docs) {
+      if (doc.id.startsWith(shortPharmacyId)) {
+        fullPharmacyId = doc.id;
+        pharmacyData = doc.data();
+        break;
       }
-      
-      console.log(`💰 Parsed amount: ${correctAmount}`);
-      
-      if (!correctAmount || isNaN(correctAmount)) {
-        console.error(`❌ Could not fetch valid amount from Chapa`);
-        return res.json({ received: true, error: 'Could not fetch amount' });
-      }
-      
-      // Flexible plan type detection using ranges
-      let planType = 'monthly';
-      let daysToAdd = 30;
-      
-      if (correctAmount >= 1400 && correctAmount <= 1450) {
-        planType = 'quarterly';
-        daysToAdd = 90;
-        console.log(`✅ Detected QUARTERLY plan (amount: ${correctAmount})`);
-      } else if (correctAmount >= 5000 && correctAmount <= 5200) {
-        planType = 'annual';
-        daysToAdd = 365;
-        console.log(`✅ Detected ANNUAL plan (amount: ${correctAmount})`);
-      } else {
-        console.log(`✅ Detected MONTHLY plan (amount: ${correctAmount})`);
-      }
-      
-      const parts = tx_ref.split('_');
-      const shortPharmacyId = parts[1];
-      
-      console.log(`🔍 Looking for pharmacy with ID starting with: ${shortPharmacyId}`);
-      
-      const pharmaciesSnapshot = await db.collection('pharmacies').get();
-      
-      let fullPharmacyId = null;
-      let pharmacyData = null;
-      
-      for (const doc of pharmaciesSnapshot.docs) {
-        if (doc.id.startsWith(shortPharmacyId)) {
-          fullPharmacyId = doc.id;
-          pharmacyData = doc.data();
-          console.log(`✅ Found pharmacy: ${pharmacyData.name}`);
-          break;
-        }
-      }
-      
-      if (!pharmacyData) {
-        console.error(`❌ Pharmacy not found`);
-        return res.json({ received: true, error: 'Pharmacy not found' });
-      }
-      
-      console.log(`📋 Plan: ${planType}, Days: ${daysToAdd}, Amount: ${correctAmount}`);
-      
-      // SAVE TO DATABASE
-      const paymentData = {
-        pharmacyId: fullPharmacyId,
-        pharmacyName: pharmacyData.name || 'Unknown',
-        amount: correctAmount,
+    }
+    
+    if (!pharmacyData) {
+      console.error(`❌ Pharmacy not found for ID: ${shortPharmacyId}`);
+      return res.json({ received: true, error: 'Pharmacy not found' });
+    }
+
+    // Save payment
+    const paymentData = {
+      pharmacyId: fullPharmacyId,
+      pharmacyName: pharmacyData.name,
+      amount: correctAmount,
+      planType: planType,
+      paymentMethod: 'chapa',
+      status: 'approved',
+      transactionId: transactionRef,
+      paymentDate: admin.firestore.Timestamp.now(),
+      createdAt: admin.firestore.Timestamp.now(),
+      verifiedBy: 'Chapa Auto'
+    };
+    
+    await db.collection('subscription_payments').add(paymentData);
+    console.log(`✅ Payment saved: ${planType} - ${correctAmount} ETB`);
+
+    // Update subscription
+    const subscriptionQuery = await db.collection('subscriptions')
+      .where('pharmacyId', '==', fullPharmacyId)
+      .get();
+    
+    const newEndDate = new Date();
+    newEndDate.setDate(newEndDate.getDate() + daysToAdd);
+    
+    if (!subscriptionQuery.empty) {
+      const subDoc = subscriptionQuery.docs[0];
+      await db.collection('subscriptions').doc(subDoc.id).update({
+        status: 'active',
         planType: planType,
-        paymentMethod: 'chapa',
-        status: 'approved',
-        transactionId: tx_ref,
-        paymentDate: admin.firestore.Timestamp.now(),
-        createdAt: admin.firestore.Timestamp.now(),
-        verifiedBy: 'Chapa Auto'
-      };
-      
-      await db.collection('subscription_payments').add(paymentData);
-      console.log('✅✅✅ PAYMENT SAVED TO subscription_payments ✅✅✅');
-      
-      // Update subscription
-      const subscriptionQuery = await db.collection('subscriptions')
-        .where('pharmacyId', '==', fullPharmacyId)
-        .get();
-      
-      const newEndDate = new Date();
-      newEndDate.setDate(newEndDate.getDate() + daysToAdd);
-      
-      if (!subscriptionQuery.empty) {
-        const subDoc = subscriptionQuery.docs[0];
-        await db.collection('subscriptions').doc(subDoc.id).update({
-          status: 'active',
-          planType: planType,
-          endDate: admin.firestore.Timestamp.fromDate(newEndDate),
-          lastPaymentDate: admin.firestore.Timestamp.now(),
-          updatedAt: admin.firestore.Timestamp.now()
-        });
-        console.log(`✅ Subscription updated to ${planType}`);
-      } else {
-        await db.collection('subscriptions').add({
-          pharmacyId: fullPharmacyId,
-          pharmacyName: pharmacyData.name,
-          planType: planType,
-          status: 'active',
-          startDate: admin.firestore.Timestamp.now(),
-          endDate: admin.firestore.Timestamp.fromDate(newEndDate),
-          lastPaymentDate: admin.firestore.Timestamp.now(),
-          createdAt: admin.firestore.Timestamp.now()
-        });
-        console.log(`✅ New subscription created for ${planType}`);
-      }
-      
-      // Update pharmacy status
-      await db.collection('pharmacies').doc(fullPharmacyId).update({
-        status: 'approved',
-        isVerified: true,
+        endDate: admin.firestore.Timestamp.fromDate(newEndDate),
         updatedAt: admin.firestore.Timestamp.now()
       });
-      
-      // Send notification
-      await db.collection('pharmacy_notifications').add({
+    } else {
+      await db.collection('subscriptions').add({
         pharmacyId: fullPharmacyId,
-        type: 'payment_approved',
-        title: '✅ Payment Successful!',
-        message: `Your payment of ${correctAmount} ETB for ${planType} plan has been confirmed. Your subscription is active for ${daysToAdd} days.`,
-        isRead: false,
+        pharmacyName: pharmacyData.name,
+        planType: planType,
+        status: 'active',
+        startDate: admin.firestore.Timestamp.now(),
+        endDate: admin.firestore.Timestamp.fromDate(newEndDate),
         createdAt: admin.firestore.Timestamp.now()
       });
-      
-      console.log('✅ Notification sent');
-      
-    } catch (error) {
-      console.error('❌ Error saving payment:', error);
     }
-  } else {
-    console.log(`⚠️ Status not success or no tx_ref: status=${status}, tx_ref=${tx_ref}`);
+    
+    console.log(`✅ Subscription updated: ${planType}`);
+    
+    // Send notification
+    await db.collection('pharmacy_notifications').add({
+      pharmacyId: fullPharmacyId,
+      type: 'payment_approved',
+      title: '✅ Payment Successful!',
+      message: `Your payment of ${correctAmount} ETB for ${planType} plan has been confirmed.`,
+      isRead: false,
+      createdAt: admin.firestore.Timestamp.now()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error processing payment:', error);
   }
   
   res.json({ received: true });
-});
-
-// POST callback for compatibility
-app.post("/api/payments/callback", async (req, res) => {
-  console.log("📞 Payment callback received (POST):", req.body);
-  res.json({ received: true });
-});
+}
 
 // ========== START SERVER ==========
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ MediFind backend running on port ${PORT}`);
-  console.log(`💰 Chapa payment mode: test`);
-  console.log(`🔑 Chapa configured: YES`);
-  console.log(`📡 Callback endpoint: /api/payments/callback`);
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`💰 Chapa mode: test`);
+  console.log(`📡 Callback: /api/payments/callback`);
 });
