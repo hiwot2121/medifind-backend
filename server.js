@@ -30,7 +30,7 @@ const db = admin.firestore();
 // ========== CHAPA PAYMENT SERVICE (Subscription) ==========
 class ChapaService {
   constructor() {
-    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-J8HK5CLTYaGbDpHbfIfKWMlt20aXylN6";
+    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-B2pE6ET9lyCMNeu3iVMQOImian8jVkSG";
     this.baseUrl = "https://api.chapa.co/v1";
     this.mode = "test";
   }
@@ -115,7 +115,7 @@ const chapa = new ChapaService();
 // ========== DELIVERY CHAPA SERVICE ==========
 class DeliveryChapaService {
   constructor() {
-    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-J8HK5CLTYaGbDpHbfIfKWMlt20aXylN6";
+    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-B2pE6ET9lyCMNeu3iVMQOImian8jVkSG";
     this.baseUrl = "https://api.chapa.co/v1";
     this.mode = "test";
   }
@@ -173,10 +173,10 @@ class DeliveryChapaService {
 
 const deliveryChapa = new DeliveryChapaService();
 
-// ========== CHAPA INSTANT PAYOUT SERVICE (NEW) ==========
+// ========== CHAPA INSTANT PAYOUT SERVICE ==========
 class ChapaInstantPayoutService {
   constructor() {
-    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-J8HK5CLTYaGbDpHbfIfKWMlt20aXylN6";
+    this.secretKey = process.env.CHAPA_SECRET_KEY || "CHASECK_TEST-B2pE6ET9lyCMNeu3iVMQOImian8jVkSG";
     this.baseUrl = "https://api.chapa.co/v1";
   }
 
@@ -265,7 +265,7 @@ app.get("/", (req, res) => {
   res.json({ message: "MediFind Backend API is running!" });
 });
 
-// ========== SUBSCRIPTION PAYMENT (Pharmacy → MediFind) ==========
+// ========== SUBSCRIPTION PAYMENT ==========
 app.post("/api/payments/initiate", async (req, res) => {
   const { amount, email, phone, firstName, lastName, itemName, pharmacyId } = req.body;
   if (!amount || !email) {
@@ -289,7 +289,7 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
-// ========== DELIVERY PAYMENT (Patient → Pharmacy with 10% Commission) ==========
+// ========== DELIVERY PAYMENT (Patient → Pharmacy) ==========
 app.post("/api/delivery/initiate-payment", async (req, res) => {
   const { subtotal, deliveryFee, email, phone, firstName, lastName, pharmacyId, pharmacyName, items } = req.body;
 
@@ -305,12 +305,8 @@ app.post("/api/delivery/initiate-payment", async (req, res) => {
     const commission = COMMISSION_CONFIG.calculateCommission(medicineSubtotal);
     const pharmacyEarning = COMMISSION_CONFIG.calculatePharmacyEarning(medicineSubtotal, deliveryFeeAmount);
     
-    console.log(`📊 Delivery Order:`);
-    console.log(`   Medicines: ${medicineSubtotal} ETB`);
-    console.log(`   Delivery: ${deliveryFeeAmount} ETB`);
-    console.log(`   Total: ${totalAmount} ETB`);
-    console.log(`   Commission (${COMMISSION_CONFIG.PERCENTAGE}%): ${commission} ETB`);
-    console.log(`   Pharmacy Earns: ${pharmacyEarning} ETB`);
+    console.log(`📊 Delivery Order: ${medicineSubtotal} + ${deliveryFeeAmount} = ${totalAmount} ETB`);
+    console.log(`   Commission: ${commission} ETB | Pharmacy: ${pharmacyEarning} ETB`);
 
     const orderRef = await db.collection("orders").add({
       pharmacyId, pharmacyName,
@@ -329,7 +325,6 @@ app.post("/api/delivery/initiate-payment", async (req, res) => {
     });
 
     const orderId = orderRef.id;
-    console.log(`📦 Order created: ${orderId}`);
 
     const result = await deliveryChapa.initializeDeliveryPayment({
       totalAmount, email, phone, firstName, lastName, pharmacyId, pharmacyName, orderId
@@ -448,34 +443,27 @@ async function processSubscriptionPayment(data, res) {
   res.json({ received: true });
 }
 
-// ========== DELIVERY PAYMENT PROCESSING WITH INSTANT SETTLEMENT (UPDATED) ==========
+// ========== DELIVERY PAYMENT PROCESSING WITH INSTANT SETTLEMENT ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status } = data;
   const transactionRef = trx_ref || tx_ref;
   
-  console.log(`🚚 Processing delivery payment: ${transactionRef}`);
-  
   if (status !== 'success' || !transactionRef) {
-    console.log(`⚠️ Payment not successful: status=${status}`);
     return res.json({ received: true });
   }
 
   try {
-    // Verify payment with Chapa
     const verifyResponse = await axios.get(
       `https://api.chapa.co/v1/transaction/verify/${transactionRef}`,
       { headers: { "Authorization": `Bearer ${deliveryChapa.secretKey}` } }
     );
     
     const paidAmount = verifyResponse.data.data?.amount;
-    console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // Find order
     const orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef).get();
     
     if (orderQuery.empty) {
-      console.error(`❌ Order not found: ${transactionRef}`);
       return res.json({ received: true });
     }
 
@@ -487,19 +475,12 @@ async function processDeliveryPayment(data, res) {
     const commission = orderData.commission || 0;
     const pharmacyEarning = orderData.pharmacyEarning || 0;
 
-    // Get pharmacy bank details
-    const pharmacyDoc = await db.collection('pharmacies').doc(pharmacyId).get();
-    const pharmacyData = pharmacyDoc.data();
-    const bankDetails = pharmacyData?.settlementAccount;
-
-    // Update order as paid
     await db.collection('orders').doc(orderId).update({
       paymentStatus: 'paid',
       paymentMethod: 'chapa',
       paymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Update platform revenue
     const month = new Date().toISOString().slice(0, 7);
     const revenueRef = db.collection('platform_revenue').doc(month);
     await db.runTransaction(async (transaction) => {
@@ -517,14 +498,13 @@ async function processDeliveryPayment(data, res) {
       }
     });
 
-    // ========== INSTANT SETTLEMENT ==========
+    const pharmacyDoc = await db.collection('pharmacies').doc(pharmacyId).get();
+    const pharmacyData = pharmacyDoc.data();
+    const bankDetails = pharmacyData?.settlementAccount;
+
     if (bankDetails && bankDetails.accountNumber && bankDetails.accountName && bankDetails.bankName) {
-      console.log(`⚡ INSTANT SETTLEMENT: Transferring ${pharmacyEarning} ETB to ${pharmacyName}...`);
-      
       const transferResult = await instantPayout.instantTransfer({
-        orderId: orderId,
-        pharmacyId: pharmacyId,
-        pharmacyName: pharmacyName,
+        orderId, pharmacyId, pharmacyName,
         accountName: bankDetails.accountName,
         accountNumber: bankDetails.accountNumber,
         bankName: bankDetails.bankName,
@@ -532,13 +512,9 @@ async function processDeliveryPayment(data, res) {
       });
 
       if (transferResult.success) {
-        // Record successful instant settlement
         await db.collection('instant_settlements').add({
-          orderId: orderId,
-          pharmacyId: pharmacyId,
-          pharmacyName: pharmacyName,
-          amount: pharmacyEarning,
-          commission: commission,
+          orderId, pharmacyId, pharmacyName,
+          amount: pharmacyEarning, commission,
           transferId: transferResult.transferId,
           reference: transferResult.reference,
           bankName: bankDetails.bankName,
@@ -547,46 +523,30 @@ async function processDeliveryPayment(data, res) {
           createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // Update total settled amount
         await db.collection('pharmacy_earnings').doc(pharmacyId).set({
-          pharmacyId: pharmacyId,
-          pharmacyName: pharmacyName,
-          balance: 0,
+          pharmacyId, pharmacyName, balance: 0,
           totalEarned: admin.firestore.FieldValue.increment(pharmacyEarning),
           totalSettled: admin.firestore.FieldValue.increment(pharmacyEarning),
           lastSettlement: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
-        // Notify pharmacy
         await db.collection('pharmacy_notifications').add({
-          pharmacyId: pharmacyId,
-          type: 'instant_settlement',
+          pharmacyId, type: 'instant_settlement',
           title: '💰 Instant Payment Received!',
-          message: `${pharmacyEarning} ETB has been transferred to your ${bankDetails.bankName} account (****${bankDetails.accountNumber.slice(-4)}).`,
-          isRead: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+          message: `${pharmacyEarning} ETB transferred to ${bankDetails.bankName} (****${bankDetails.accountNumber.slice(-4)}).`,
+          isRead: false, createdAt: admin.firestore.Timestamp.now()
         });
-
-        console.log(`✅ Instant settlement complete! Order ${orderId}`);
       } else {
-        // Transfer failed - hold in balance
-        console.log(`⚠️ Instant transfer failed, holding in balance`);
-        await holdFundsInBalance(pharmacyId, pharmacyName, pharmacyEarning, orderId);
+        await holdFundsInBalance(pharmacyId, pharmacyName, pharmacyEarning);
       }
     } else {
-      // No bank details - hold in balance
-      console.log(`⚠️ Pharmacy ${pharmacyName} has no bank details, holding funds`);
-      await holdFundsInBalance(pharmacyId, pharmacyName, pharmacyEarning, orderId);
-      
-      // Notify pharmacy to add bank details
+      await holdFundsInBalance(pharmacyId, pharmacyName, pharmacyEarning);
       await db.collection('pharmacy_notifications').add({
-        pharmacyId: pharmacyId,
-        type: 'bank_details_needed',
+        pharmacyId, type: 'bank_details_needed',
         title: '🏦 Add Bank Details',
         message: `You have ${pharmacyEarning} ETB waiting. Add bank details to receive instant payments.`,
-        isRead: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
+        isRead: false, createdAt: admin.firestore.Timestamp.now()
       });
     }
 
@@ -596,8 +556,7 @@ async function processDeliveryPayment(data, res) {
   res.json({ received: true });
 }
 
-// Helper function to hold funds when instant transfer fails or no bank details
-async function holdFundsInBalance(pharmacyId, pharmacyName, amount, orderId) {
+async function holdFundsInBalance(pharmacyId, pharmacyName, amount) {
   const earningsRef = db.collection('pharmacy_earnings').doc(pharmacyId);
   await db.runTransaction(async (transaction) => {
     const doc = await transaction.get(earningsRef);
@@ -615,7 +574,6 @@ async function holdFundsInBalance(pharmacyId, pharmacyName, amount, orderId) {
       });
     }
   });
-  console.log(`💰 Funds held in balance: ${pharmacyName} - ${amount} ETB`);
 }
 
 // ========== EARNINGS ENDPOINTS ==========
@@ -623,11 +581,9 @@ app.get("/api/pharmacy/:pharmacyId/earnings", async (req, res) => {
   try {
     const { pharmacyId } = req.params;
     const earningsDoc = await db.collection('pharmacy_earnings').doc(pharmacyId).get();
-    
     if (!earningsDoc.exists) {
       return res.json({ balance: 0, totalEarned: 0, totalSettled: 0 });
     }
-    
     res.json(earningsDoc.data());
   } catch (error) {
     res.status(500).json({ error: error.message });
