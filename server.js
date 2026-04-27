@@ -137,7 +137,7 @@ class DeliveryChapaService {
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
         callback_url: `https://medifind-backend-0raf.onrender.com/api/delivery/callback`,
-        return_url: `https://medifind.app/payment-complete`,
+        return_url: `https://medifind-gondar-d27f7.web.app/payment-done.html`,
         customization: {
           title: "MediFind Pay",
           description: "Medicine order"
@@ -180,23 +180,24 @@ class ChapaInstantPayoutService {
     this.baseUrl = "https://api.chapa.co/v1";
   }
 
+  // FIXED: Numeric bank codes
   getBankCode(bankName) {
     const bankCodes = {
-      'Commercial Bank of Ethiopia': 'CBE',
-      'Awash Bank': 'AWASH',
-      'Dashen Bank': 'DASHEN',
-      'Abyssinia Bank': 'ABYSSINIA',
-      'Wegagen Bank': 'WEGAGEN',
-      'Nib International Bank': 'NIB',
-      'Cooperative Bank of Oromia': 'COOP',
-      'Lion International Bank': 'LION',
-      'Zemen Bank': 'ZEMEN',
-      'Bunna Bank': 'BUNNA',
-      'United Bank': 'UNITED',
-      'Berhan Bank': 'BERHAN',
-      'Hibret Bank': 'HIBRET'
+      'Commercial Bank of Ethiopia': '1',
+      'Awash Bank': '2',
+      'Dashen Bank': '3',
+      'Abyssinia Bank': '4',
+      'Wegagen Bank': '5',
+      'Nib International Bank': '6',
+      'Cooperative Bank of Oromia': '7',
+      'Lion International Bank': '8',
+      'Zemen Bank': '9',
+      'Bunna Bank': '10',
+      'United Bank': '11',
+      'Berhan Bank': '12',
+      'Hibret Bank': '13'
     };
-    return bankCodes[bankName] || 'CBE';
+    return bankCodes[bankName] || '1';
   }
 
   async instantTransfer(transferData) {
@@ -207,8 +208,8 @@ class ChapaInstantPayoutService {
         bank_code: this.getBankCode(transferData.bankName),
         amount: transferData.amount,
         currency: 'ETB',
-        reference: `INSTANT_${transferData.orderId}_${Date.now()}`,
-        narration: `MediFind Order ${transferData.orderId}`
+        reference: `MF${transferData.orderId.substring(0, 10)}${Date.now().toString().slice(-6)}`,
+        narration: `MediFind Order ${transferData.orderId.substring(0, 8)}`
       };
 
       console.log(`⚡ INSTANT TRANSFER INITIATED:`);
@@ -217,6 +218,7 @@ class ChapaInstantPayoutService {
       console.log(`   Account: ${transferData.accountName} (****${transferData.accountNumber.slice(-4)})`);
       console.log(`   Amount: ${transferData.amount} ETB`);
       console.log(`   Order: ${transferData.orderId}`);
+      console.log(`   Reference: ${payload.reference} (${payload.reference.length} chars)`);
 
       const response = await axios.post(
         `${this.baseUrl}/transfers`,
