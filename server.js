@@ -53,7 +53,7 @@ class ChapaService {
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
         callback_url: `https://medifind-backend-0raf.onrender.com/api/payments/callback`,
-        return_url: `https://medifind-gondar-d27f7.web.app/pharmacy/payment-status`,
+        return_url: `https://medifind-gondar-d27f7.web.app/pharmacy/payment-status`,  // ← Subscription: login OK
         customization: {
           title: "MediFind Sub",
           description: "Subscription payment"
@@ -137,7 +137,7 @@ class DeliveryChapaService {
         phone_number: paymentData.phone || "0912345678",
         tx_ref: tx_ref,
         callback_url: `https://medifind-backend-0raf.onrender.com/api/delivery/callback`,
-        return_url: `https://medifind-gondar-d27f7.web.app/payment/status`,
+        return_url: `https://medifind-gondar-d27f7.web.app/payment-done.html`,  // ← FIXED: Public page, no login
         customization: {
           title: "MediFind Pay",
           description: "Medicine order"
@@ -624,4 +624,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 Subscription Callback: /api/payments/callback`);
   console.log(`🚚 Delivery Callback: /api/delivery/callback`);
   console.log(`⚡ Instant Settlement: ENABLED`);
-});
+}); 
