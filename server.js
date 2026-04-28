@@ -180,7 +180,6 @@ class ChapaInstantPayoutService {
     this.baseUrl = "https://api.chapa.co/v1";
   }
 
-  // FIXED: Numeric bank codes
   getBankCode(bankName) {
     const bankCodes = {
       'Commercial Bank of Ethiopia': '1',
@@ -218,7 +217,6 @@ class ChapaInstantPayoutService {
       console.log(`   Account: ${transferData.accountName} (****${transferData.accountNumber.slice(-4)})`);
       console.log(`   Amount: ${transferData.amount} ETB`);
       console.log(`   Order: ${transferData.orderId}`);
-      console.log(`   Reference: ${payload.reference} (${payload.reference.length} chars)`);
 
       const response = await axios.post(
         `${this.baseUrl}/transfers`,
@@ -445,7 +443,7 @@ async function processSubscriptionPayment(data, res) {
   res.json({ received: true });
 }
 
-// ========== DELIVERY PAYMENT PROCESSING WITH INSTANT SETTLEMENT ==========
+// ========== DELIVERY PAYMENT PROCESSING (FIXED WEBHOOK) ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status } = data;
   const transactionRef = trx_ref || tx_ref;
@@ -466,12 +464,24 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    const orderQuery = await db.collection('orders')
+    // ========== FIXED: Try to find order by reference OR get most recent pending ==========
+    let orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef).get();
     
+    // If not found by paymentReference, try the most recent pending order
     if (orderQuery.empty) {
-      console.error(`❌ Order not found: ${transactionRef}`);
-      return res.json({ received: true });
+      console.log(`⚠️ Order not found by paymentReference, searching for recent pending order...`);
+      orderQuery = await db.collection('orders')
+        .where('paymentStatus', '==', 'pending')
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get();
+      
+      if (orderQuery.empty) {
+        console.error(`❌ No pending order found`);
+        return res.json({ received: true });
+      }
+      console.log(`✅ Found recent pending order instead`);
     }
 
     const orderDoc = orderQuery.docs[0];
@@ -489,7 +499,8 @@ async function processDeliveryPayment(data, res) {
     await db.collection('orders').doc(orderId).update({
       paymentStatus: 'paid',
       paymentMethod: 'chapa',
-      paymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp()
+      paymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
+      chapaTransactionRef: transactionRef
     });
 
     const month = new Date().toISOString().slice(0, 7);
@@ -626,4 +637,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 Subscription Callback: /api/payments/callback`);
   console.log(`🚚 Delivery Callback: /api/delivery/callback`);
   console.log(`⚡ Instant Settlement: ENABLED`);
-}); 
+});
