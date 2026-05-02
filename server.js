@@ -7,6 +7,9 @@ require("dotenv").config();
 // ========== IMPORT COMMISSION CONFIG ==========
 const { COMMISSION_CONFIG } = require('./config/commission');
 
+// ========== IMPORT OTP SERVICE ==========
+const { requestOTP, verifyOTP, getOTPStatus } = require('./services/otpService');
+
 // ========== FIREBASE CONFIGURATION ==========
 const serviceAccount = {
   type: "service_account",
@@ -264,6 +267,11 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({ message: "MediFind Backend API is running!" });
 });
+
+// ========== EMAIL OTP VERIFICATION ==========
+app.post("/api/request-otp", requestOTP);
+app.post("/api/verify-otp", verifyOTP);
+app.get("/api/otp-status", getOTPStatus);
 
 // ========== SUBSCRIPTION PAYMENT (Pharmacy → MediFind) ==========
 app.post("/api/payments/initiate", async (req, res) => {
@@ -634,6 +642,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`💰 Commission Rate: ${COMMISSION_CONFIG.PERCENTAGE}%`);
+  console.log(`📧 Email OTP Service: ENABLED`);
   console.log(`📡 Subscription Callback: /api/payments/callback`);
   console.log(`🚚 Delivery Callback: /api/delivery/callback`);
   console.log(`⚡ Instant Settlement: ENABLED`);
