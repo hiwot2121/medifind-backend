@@ -1,0 +1,41 @@
+node_modules/
+serviceAccountkey.json
+config/firebase-service-account.json
+
+# Environment variables (ADD THESE)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# API keys and secrets
+*.pem
+*.key
+*.secret
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build files
+dist/
+build/
+.next/
+out/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/".env" 
