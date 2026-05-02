@@ -14,7 +14,7 @@ setInterval(() => {
   }
 }, 60000);
 
-// Configure email transporter for Brevo
+// Configure email transporter - Supports both Brevo and Gmail
 const createTransporter = () => {
   // Check if we have email credentials
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
@@ -22,11 +22,30 @@ const createTransporter = () => {
     return null;
   }
   
-  // Brevo SMTP Configuration
+  // Auto-detect which email service to use based on host
+  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  
+  // Gmail SMTP Configuration
+  if (host.includes('gmail')) {
+    return nodemailer.createTransport({
+      host: host,
+      port: parseInt(process.env.EMAIL_PORT) || 587,
+      secure: false, // false for port 587
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+  }
+  
+  // Brevo SMTP Configuration (fallback)
   return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp-relay.brevo.com',
+    host: host,
     port: parseInt(process.env.EMAIL_PORT) || 587,
-    secure: false, // TLS for port 587
+    secure: false,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
@@ -52,8 +71,8 @@ const sendOTP = async (email, otp) => {
     return true;
   }
   
-  // Use VERIFIED_SENDER from .env or fallback to betikiya73@gmail.com
-  const fromEmail = process.env.VERIFIED_SENDER || 'betikiya73@gmail.com';
+  // Use VERIFIED_SENDER from .env or fallback to email user
+  const fromEmail = process.env.VERIFIED_SENDER || process.env.EMAIL_USER;
   
   const mailOptions = {
     from: `"MediFind" <${fromEmail}>`,
