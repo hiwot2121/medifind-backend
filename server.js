@@ -637,6 +637,34 @@ app.get("/api/pharmacy/:pharmacyId/earnings", async (req, res) => {
   }
 });
 
+// ========== KEEP ALIVE (Prevent Render.com Cold Start) ==========
+// This pings the server every 4 minutes to keep it awake
+// Render free tier sleeps after 15 minutes of inactivity
+
+const keepServerAlive = () => {
+  const baseUrl = process.env.BASE_URL || 'https://medifind-backend-0raf.onrender.com';
+  const healthUrl = `${baseUrl}/health`;
+  
+  axios.get(healthUrl)
+    .then((response) => {
+      console.log(`💓 Keep-alive ping sent at ${new Date().toISOString()} - Status: ${response.data.status}`);
+    })
+    .catch((error) => {
+      console.log(`⚠️ Keep-alive ping failed at ${new Date().toISOString()}: ${error.message}`);
+    });
+};
+
+// Ping every 4 minutes (240,000 ms) - keeps the server awake
+setInterval(keepServerAlive, 4 * 60 * 1000);
+
+// Send first ping 30 seconds after server starts
+setTimeout(() => {
+  console.log('🚀 Sending initial keep-alive ping...');
+  keepServerAlive();
+}, 30000);
+
+console.log('⏰ Keep-alive service configured: Pinging every 4 minutes');
+
 // ========== START SERVER ==========
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
@@ -646,4 +674,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 Subscription Callback: /api/payments/callback`);
   console.log(`🚚 Delivery Callback: /api/delivery/callback`);
   console.log(`⚡ Instant Settlement: ENABLED`);
+  console.log(`💓 Keep-alive: Active (pinging every 4 minutes)`);
 });
