@@ -451,7 +451,7 @@ async function processSubscriptionPayment(data, res) {
   res.json({ received: true });
 }
 
-// ========== DELIVERY PAYMENT PROCESSING (FIXED - NO DUPLICATES) ==========
+// ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status, reference } = data;
   const transactionRef = trx_ref || tx_ref || reference;
@@ -464,6 +464,7 @@ async function processDeliveryPayment(data, res) {
   }
 
   try {
+    // Verify payment with Chapa
     const verifyResponse = await axios.get(
       `https://api.chapa.co/v1/transaction/verify/${transactionRef}`,
       { headers: { "Authorization": `Bearer ${deliveryChapa.secretKey}` } }
@@ -472,13 +473,13 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== FIXED: Find order by paymentReference ONLY - NO FALLBACK ==========
+    // ========== CRITICAL: Find EXISTING order by paymentReference ==========
     let orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
       .get();
     
-    // If not found by paymentReference, try chapaTransactionRef
+    // If not found, try by chapaTransactionRef
     if (orderQuery.empty) {
       console.log(`⚠️ Order not found by paymentReference, trying chapaTransactionRef...`);
       orderQuery = await db.collection('orders')
@@ -487,55 +488,55 @@ async function processDeliveryPayment(data, res) {
         .get();
     }
     
-    // If STILL not found, DO NOT create new order - just log error
+    // ========== CRITICAL: If NO order found, DO NOTHING - NEVER CREATE NEW ==========
     if (orderQuery.empty) {
-      console.error(`❌ CRITICAL: No order found for transaction: ${transactionRef}`);
-      console.error(`   This webhook will NOT create a duplicate order.`);
+      console.error(`❌ PERMANENT FIX: No order found for transaction: ${transactionRef}`);
+      console.error(`   WILL NOT CREATE NEW ORDER - This prevents duplicates!`);
       
-      // Log to a separate collection for manual review
+      // Log for debugging
       await db.collection('failed_webhooks').add({
         transactionRef: transactionRef,
         receivedData: data,
-        error: 'No matching order found - will not create duplicate',
+        error: 'No matching order found - prevented duplicate creation',
         receivedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       
-      return res.json({ received: true, error: 'Order not found' });
+      return res.json({ received: true, preventedDuplicate: true });
     }
 
     const orderDoc = orderQuery.docs[0];
     const orderData = orderDoc.data();
     const orderId = orderDoc.id;
     
-    // IMPORTANT: Check if already processed to prevent duplicate updates
+    // Check if already processed
     if (orderData.paymentStatus === 'paid') {
       console.log(`⚠️ Order ${orderId} already marked as paid. Skipping duplicate processing.`);
       return res.json({ received: true, alreadyProcessed: true });
     }
+    
+    console.log(`✅ Found EXISTING order: ${orderId} - UPDATING it (NOT creating new)`);
     
     const pharmacyId = orderData.pharmacyId;
     const pharmacyName = orderData.pharmacyName;
     const commission = orderData.commission || 0;
     const pharmacyEarning = orderData.pharmacyEarning || 0;
 
-    console.log(`✅ Found order: ${orderId} for pharmacy: ${pharmacyName}`);
-    console.log(`   Order total: ${orderData.totalAmount}, Commission: ${commission}, Pharmacy earns: ${pharmacyEarning}`);
-
     const pharmacyDoc = await db.collection('pharmacies').doc(pharmacyId).get();
     const pharmacyData = pharmacyDoc.data();
     const bankDetails = pharmacyData?.settlementAccount;
 
-    // Update ONLY the existing order - DO NOT CREATE NEW ONE
+    // ========== UPDATE existing order - NEVER CREATE NEW ==========
     await db.collection('orders').doc(orderId).update({
       paymentStatus: 'paid',
       paymentMethod: 'chapa',
       paymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
       chapaTransactionRef: transactionRef,
-      orderStatus: 'accepted',  // Auto-accept after payment confirmation
+      orderStatus: 'accepted',
+      paidAmount: paidAmount,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`✅ Order ${orderId} updated: paymentStatus=paid, orderStatus=accepted`);
+    console.log(`✅ Order ${orderId} UPDATED: paymentStatus=paid, orderStatus=accepted`);
 
     // Add notification for pharmacy
     await db.collection('pharmacy_notifications').add({
@@ -678,9 +679,6 @@ app.get("/api/pharmacy/:pharmacyId/earnings", async (req, res) => {
 });
 
 // ========== KEEP ALIVE (Prevent Render.com Cold Start) ==========
-// This pings the server every 4 minutes to keep it awake
-// Render free tier sleeps after 15 minutes of inactivity
-
 const keepServerAlive = () => {
   const baseUrl = process.env.BASE_URL || 'https://medifind-backend-0raf.onrender.com';
   const healthUrl = `${baseUrl}/health`;
@@ -694,10 +692,8 @@ const keepServerAlive = () => {
     });
 };
 
-// Ping every 4 minutes (240,000 ms) - keeps the server awake
 setInterval(keepServerAlive, 4 * 60 * 1000);
 
-// Send first ping 30 seconds after server starts
 setTimeout(() => {
   console.log('🚀 Sending initial keep-alive ping...');
   keepServerAlive();
