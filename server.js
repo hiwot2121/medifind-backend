@@ -459,7 +459,7 @@ async function processDeliveryPayment(data, res) {
   console.log(`🚚 Processing delivery payment: ${transactionRef}`);
   
   if (status !== 'success' || !transactionRef) {
-    console.log(`⚠️ Payment not successful or no reference: status=${status}`);
+    console.log(`⚠️ Payment not successful: status=${status}`);
     return res.json({ received: true });
   }
 
@@ -473,25 +473,16 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== CRITICAL: Find EXISTING order by paymentReference ==========
-    let orderQuery = await db.collection('orders')
+    // ========== CRITICAL: Find EXISTING order by paymentReference ONLY ==========
+    const orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
       .get();
     
-    // If not found, try by chapaTransactionRef
-    if (orderQuery.empty) {
-      console.log(`⚠️ Order not found by paymentReference, trying chapaTransactionRef...`);
-      orderQuery = await db.collection('orders')
-        .where('chapaTransactionRef', '==', transactionRef)
-        .limit(1)
-        .get();
-    }
-    
-    // ========== CRITICAL: If NO order found, DO NOTHING - NEVER CREATE NEW ==========
+    // ========== IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
     if (orderQuery.empty) {
       console.error(`❌ PERMANENT FIX: No order found for transaction: ${transactionRef}`);
-      console.error(`   WILL NOT CREATE NEW ORDER - This prevents duplicates!`);
+      console.error(`   WILL NOT CREATE NEW ORDER - DUPLICATE PREVENTED!`);
       
       // Log for debugging
       await db.collection('failed_webhooks').add({
@@ -501,31 +492,22 @@ async function processDeliveryPayment(data, res) {
         receivedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       
-      return res.json({ received: true, preventedDuplicate: true });
+      return res.json({ received: true, duplicatePrevented: true });
     }
 
     const orderDoc = orderQuery.docs[0];
     const orderData = orderDoc.data();
     const orderId = orderDoc.id;
     
-    // Check if already processed
+    // Skip if already paid
     if (orderData.paymentStatus === 'paid') {
-      console.log(`⚠️ Order ${orderId} already marked as paid. Skipping duplicate processing.`);
-      return res.json({ received: true, alreadyProcessed: true });
+      console.log(`⚠️ Order ${orderId} already paid - skipping duplicate processing`);
+      return res.json({ received: true, alreadyPaid: true });
     }
     
-    console.log(`✅ Found EXISTING order: ${orderId} - UPDATING it (NOT creating new)`);
-    
-    const pharmacyId = orderData.pharmacyId;
-    const pharmacyName = orderData.pharmacyName;
-    const commission = orderData.commission || 0;
-    const pharmacyEarning = orderData.pharmacyEarning || 0;
+    console.log(`✅ Found EXISTING order: ${orderId} - UPDATING (NOT creating new)`);
 
-    const pharmacyDoc = await db.collection('pharmacies').doc(pharmacyId).get();
-    const pharmacyData = pharmacyDoc.data();
-    const bankDetails = pharmacyData?.settlementAccount;
-
-    // ========== UPDATE existing order - NEVER CREATE NEW ==========
+    // ========== UPDATE the existing order (NEVER CREATE NEW) ==========
     await db.collection('orders').doc(orderId).update({
       paymentStatus: 'paid',
       paymentMethod: 'chapa',
@@ -536,28 +518,27 @@ async function processDeliveryPayment(data, res) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`✅ Order ${orderId} UPDATED: paymentStatus=paid, orderStatus=accepted`);
+    console.log(`✅ Order ${orderId} UPDATED successfully - NO DUPLICATE CREATED`);
 
-    // Add notification for pharmacy
+    // Send notification to pharmacy
     await db.collection('pharmacy_notifications').add({
-      pharmacyId: pharmacyId,
+      pharmacyId: orderData.pharmacyId,
       type: 'payment_received',
       title: '💰 Payment Received!',
-      message: `Order #${orderId.slice(-6)} - ETB ${paidAmount} paid by ${orderData.customerName}. Ready to prepare.`,
+      message: `Order #${orderId.slice(-6)} - ETB ${paidAmount} paid by ${orderData.customerName}`,
       isRead: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Record commission in platform_revenue
+    // Record commission
+    const commission = orderData.commission || 0;
     const month = new Date().toISOString().slice(0, 7);
     const revenueRef = db.collection('platform_revenue').doc(month);
     await db.runTransaction(async (transaction) => {
       const doc = await transaction.get(revenueRef);
       if (!doc.exists) {
         transaction.set(revenueRef, {
-          month, 
-          totalCommission: commission, 
-          totalOrders: 1,
+          month, totalCommission: commission, totalOrders: 1,
           createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
       } else {
@@ -568,71 +549,38 @@ async function processDeliveryPayment(data, res) {
       }
     });
 
-    // Handle settlement if bank details exist
-    if (bankDetails && bankDetails.accountNumber && bankDetails.accountName && bankDetails.bankName) {
-      console.log(`⚡ INSTANT SETTLEMENT: Transferring ${pharmacyEarning} ETB to ${pharmacyName}...`);
-      
+    // Handle direct payout
+    const pharmacyEarning = orderData.pharmacyEarning || 0;
+    const bankDetails = (await db.collection('pharmacies').doc(orderData.pharmacyId).get()).data()?.settlementAccount;
+    
+    if (bankDetails && bankDetails.accountNumber && bankDetails.accountName && bankDetails.bankName && pharmacyEarning > 0) {
       const transferResult = await instantPayout.instantTransfer({
         orderId: orderId,
-        pharmacyId: pharmacyId,
-        pharmacyName: pharmacyName,
+        pharmacyId: orderData.pharmacyId,
+        pharmacyName: orderData.pharmacyName,
         accountName: bankDetails.accountName,
         accountNumber: bankDetails.accountNumber,
         bankName: bankDetails.bankName,
         amount: pharmacyEarning
       });
-
+      
       if (transferResult.success) {
         await db.collection('instant_settlements').add({
           orderId: orderId,
-          pharmacyId: pharmacyId,
-          pharmacyName: pharmacyName,
+          pharmacyId: orderData.pharmacyId,
+          pharmacyName: orderData.pharmacyName,
           amount: pharmacyEarning,
           commission: commission,
           transferId: transferResult.transferId,
-          reference: transferResult.reference,
-          bankName: bankDetails.bankName,
-          accountLast4: bankDetails.accountNumber.slice(-4),
           status: 'completed',
           createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
-
-        await db.collection('pharmacy_earnings').doc(pharmacyId).set({
-          pharmacyId: pharmacyId,
-          pharmacyName: pharmacyName,
-          balance: 0,
-          totalEarned: admin.firestore.FieldValue.increment(pharmacyEarning),
-          totalSettled: admin.firestore.FieldValue.increment(pharmacyEarning),
-          lastSettlement: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-
-        await db.collection('pharmacy_notifications').add({
-          pharmacyId: pharmacyId,
-          type: 'instant_settlement',
-          title: '💰 Instant Payment Received!',
-          message: `${pharmacyEarning} ETB has been transferred to your ${bankDetails.bankName} account (****${bankDetails.accountNumber.slice(-4)}).`,
-          isRead: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log(`✅ Instant settlement complete! Order ${orderId}`);
+        console.log(`✅ Instant settlement: ${pharmacyEarning} ETB to ${orderData.pharmacyName}`);
       } else {
-        console.log(`⚠️ Instant transfer failed, holding in balance`);
-        await holdFundsInBalance(pharmacyId, pharmacyName, pharmacyEarning);
+        await holdFundsInBalance(orderData.pharmacyId, orderData.pharmacyName, pharmacyEarning);
       }
-    } else {
-      console.log(`⚠️ Pharmacy ${pharmacyName} has no bank details, holding funds`);
-      await holdFundsInBalance(pharmacyId, pharmacyName, pharmacyEarning);
-      
-      await db.collection('pharmacy_notifications').add({
-        pharmacyId: pharmacyId,
-        type: 'bank_details_needed',
-        title: '🏦 Add Bank Details',
-        message: `You have ${pharmacyEarning} ETB waiting. Add bank details to receive instant payments.`,
-        isRead: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+    } else if (pharmacyEarning > 0) {
+      await holdFundsInBalance(orderData.pharmacyId, orderData.pharmacyName, pharmacyEarning);
     }
 
   } catch (error) {
