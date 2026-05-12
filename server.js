@@ -451,15 +451,15 @@ async function processSubscriptionPayment(data, res) {
   res.json({ received: true });
 }
 
-// ========== DELIVERY PAYMENT PROCESSING (FIXED WEBHOOK) ==========
+// ========== DELIVERY PAYMENT PROCESSING (FIXED - NO DUPLICATES) ==========
 async function processDeliveryPayment(data, res) {
-  const { trx_ref, tx_ref, status } = data;
-  const transactionRef = trx_ref || tx_ref;
+  const { trx_ref, tx_ref, status, reference } = data;
+  const transactionRef = trx_ref || tx_ref || reference;
   
   console.log(`🚚 Processing delivery payment: ${transactionRef}`);
   
   if (status !== 'success' || !transactionRef) {
-    console.log(`⚠️ Payment not successful: status=${status}`);
+    console.log(`⚠️ Payment not successful or no reference: status=${status}`);
     return res.json({ received: true });
   }
 
@@ -472,53 +472,92 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== FIXED: Try to find order by reference OR get most recent pending ==========
+    // ========== FIXED: Find order by paymentReference ONLY - NO FALLBACK ==========
     let orderQuery = await db.collection('orders')
-      .where('paymentReference', '==', transactionRef).get();
+      .where('paymentReference', '==', transactionRef)
+      .limit(1)
+      .get();
     
-    // If not found by paymentReference, try the most recent pending order
+    // If not found by paymentReference, try chapaTransactionRef
     if (orderQuery.empty) {
-      console.log(`⚠️ Order not found by paymentReference, searching for recent pending order...`);
+      console.log(`⚠️ Order not found by paymentReference, trying chapaTransactionRef...`);
       orderQuery = await db.collection('orders')
-        .where('paymentStatus', '==', 'pending')
-        .orderBy('createdAt', 'desc')
+        .where('chapaTransactionRef', '==', transactionRef)
         .limit(1)
         .get();
+    }
+    
+    // If STILL not found, DO NOT create new order - just log error
+    if (orderQuery.empty) {
+      console.error(`❌ CRITICAL: No order found for transaction: ${transactionRef}`);
+      console.error(`   This webhook will NOT create a duplicate order.`);
       
-      if (orderQuery.empty) {
-        console.error(`❌ No pending order found`);
-        return res.json({ received: true });
-      }
-      console.log(`✅ Found recent pending order instead`);
+      // Log to a separate collection for manual review
+      await db.collection('failed_webhooks').add({
+        transactionRef: transactionRef,
+        receivedData: data,
+        error: 'No matching order found - will not create duplicate',
+        receivedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      return res.json({ received: true, error: 'Order not found' });
     }
 
     const orderDoc = orderQuery.docs[0];
     const orderData = orderDoc.data();
     const orderId = orderDoc.id;
+    
+    // IMPORTANT: Check if already processed to prevent duplicate updates
+    if (orderData.paymentStatus === 'paid') {
+      console.log(`⚠️ Order ${orderId} already marked as paid. Skipping duplicate processing.`);
+      return res.json({ received: true, alreadyProcessed: true });
+    }
+    
     const pharmacyId = orderData.pharmacyId;
     const pharmacyName = orderData.pharmacyName;
     const commission = orderData.commission || 0;
     const pharmacyEarning = orderData.pharmacyEarning || 0;
 
+    console.log(`✅ Found order: ${orderId} for pharmacy: ${pharmacyName}`);
+    console.log(`   Order total: ${orderData.totalAmount}, Commission: ${commission}, Pharmacy earns: ${pharmacyEarning}`);
+
     const pharmacyDoc = await db.collection('pharmacies').doc(pharmacyId).get();
     const pharmacyData = pharmacyDoc.data();
     const bankDetails = pharmacyData?.settlementAccount;
 
+    // Update ONLY the existing order - DO NOT CREATE NEW ONE
     await db.collection('orders').doc(orderId).update({
       paymentStatus: 'paid',
       paymentMethod: 'chapa',
       paymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
-      chapaTransactionRef: transactionRef
+      chapaTransactionRef: transactionRef,
+      orderStatus: 'accepted',  // Auto-accept after payment confirmation
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`✅ Order ${orderId} updated: paymentStatus=paid, orderStatus=accepted`);
+
+    // Add notification for pharmacy
+    await db.collection('pharmacy_notifications').add({
+      pharmacyId: pharmacyId,
+      type: 'payment_received',
+      title: '💰 Payment Received!',
+      message: `Order #${orderId.slice(-6)} - ETB ${paidAmount} paid by ${orderData.customerName}. Ready to prepare.`,
+      isRead: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // Record commission in platform_revenue
     const month = new Date().toISOString().slice(0, 7);
     const revenueRef = db.collection('platform_revenue').doc(month);
     await db.runTransaction(async (transaction) => {
       const doc = await transaction.get(revenueRef);
       if (!doc.exists) {
         transaction.set(revenueRef, {
-          month, totalCommission: commission, totalOrders: 1,
-          createdAt: admin.firestore.Timestamp.now()
+          month, 
+          totalCommission: commission, 
+          totalOrders: 1,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
       } else {
         transaction.update(revenueRef, {
@@ -528,6 +567,7 @@ async function processDeliveryPayment(data, res) {
       }
     });
 
+    // Handle settlement if bank details exist
     if (bankDetails && bankDetails.accountNumber && bankDetails.accountName && bankDetails.bankName) {
       console.log(`⚡ INSTANT SETTLEMENT: Transferring ${pharmacyEarning} ETB to ${pharmacyName}...`);
       
