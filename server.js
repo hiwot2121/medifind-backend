@@ -452,7 +452,7 @@ async function processSubscriptionPayment(data, res) {
 }
 
 // ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
-// ========== DELIVERY PAYMENT PROCESSING (FIXED - NEVER CREATE NEW ORDER) ==========
+// ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status, reference } = data;
   const transactionRef = trx_ref || tx_ref || reference;
@@ -474,13 +474,13 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== CRITICAL: Find EXISTING order by paymentReference ==========
+    // ========== STEP 1: Find EXISTING order by paymentReference ==========
     let orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
       .get();
     
-    // If not found by paymentReference, try chapaTransactionRef
+    // ========== STEP 2: If not found, try by chapaTransactionRef ==========
     if (orderQuery.empty) {
       console.log(`⚠️ Checking chapaTransactionRef...`);
       orderQuery = await db.collection('orders')
@@ -489,12 +489,11 @@ async function processDeliveryPayment(data, res) {
         .get();
     }
     
-    // If still not found, try by orderId extracted from transactionRef
+    // ========== STEP 3: If still not found, try by orderId from the reference ==========
     if (orderQuery.empty && transactionRef.includes('_')) {
       const parts = transactionRef.split('_');
-      if (parts.length >= 3) {
-        // Try to find by orderId in the transaction reference
-        const possibleOrderId = parts.slice(2).join('_');
+      if (parts.length >= 2) {
+        const possibleOrderId = parts[parts.length - 1];
         console.log(`⚠️ Trying to find by orderId: ${possibleOrderId}`);
         const orderDoc = await db.collection('orders').doc(possibleOrderId).get();
         if (orderDoc.exists) {
@@ -504,7 +503,7 @@ async function processDeliveryPayment(data, res) {
       }
     }
     
-    // ========== IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
+    // ========== CRITICAL: IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
     if (orderQuery.empty) {
       console.error(`❌ PERMANENT FIX: No order found for transaction: ${transactionRef}`);
       console.error(`   WILL NOT CREATE NEW ORDER - DUPLICATE PREVENTED!`);
@@ -524,7 +523,7 @@ async function processDeliveryPayment(data, res) {
     const orderData = orderDoc.data();
     const orderId = orderDoc.id;
     
-    // Skip if already paid
+    // ========== Skip if already paid ==========
     if (orderData.paymentStatus === 'paid') {
       console.log(`⚠️ Order ${orderId} already paid - skipping duplicate processing`);
       return res.json({ received: true, alreadyPaid: true });
