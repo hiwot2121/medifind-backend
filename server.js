@@ -452,7 +452,7 @@ async function processSubscriptionPayment(data, res) {
 }
 
 // ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
-// ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
+// ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX) ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status, reference } = data;
   const transactionRef = trx_ref || tx_ref || reference;
@@ -474,48 +474,32 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== STEP 1: Find EXISTING order by paymentReference ==========
+    // ========== TRY MULTIPLE WAYS TO FIND THE EXISTING ORDER ==========
     let orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
       .get();
     
-    // ========== STEP 2: If not found, try by chapaTransactionRef ==========
     if (orderQuery.empty) {
-      console.log(`⚠️ Checking chapaTransactionRef...`);
       orderQuery = await db.collection('orders')
         .where('chapaTransactionRef', '==', transactionRef)
         .limit(1)
         .get();
     }
     
-    // ========== STEP 3: If still not found, try by orderId from the reference ==========
-    if (orderQuery.empty && transactionRef.includes('_')) {
-      const parts = transactionRef.split('_');
-      if (parts.length >= 2) {
-        const possibleOrderId = parts[parts.length - 1];
-        console.log(`⚠️ Trying to find by orderId: ${possibleOrderId}`);
-        const orderDoc = await db.collection('orders').doc(possibleOrderId).get();
-        if (orderDoc.exists) {
-          orderQuery = { docs: [orderDoc], empty: false };
-          console.log(`✅ Found order by ID: ${possibleOrderId}`);
-        }
+    // ALSO TRY TO FIND BY ORDER ID FROM THE URL PARAMETERS
+    if (orderQuery.empty && data.orderId) {
+      const orderDoc = await db.collection('orders').doc(data.orderId).get();
+      if (orderDoc.exists) {
+        orderQuery = { docs: [orderDoc], empty: false };
+        console.log(`✅ Found order by orderId: ${data.orderId}`);
       }
     }
     
-    // ========== CRITICAL: IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
+    // ========== IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
     if (orderQuery.empty) {
       console.error(`❌ PERMANENT FIX: No order found for transaction: ${transactionRef}`);
       console.error(`   WILL NOT CREATE NEW ORDER - DUPLICATE PREVENTED!`);
-      
-      // Log for debugging
-      await db.collection('failed_webhooks').add({
-        transactionRef: transactionRef,
-        receivedData: data,
-        error: 'No matching order found - prevented duplicate creation',
-        receivedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-      
       return res.json({ received: true, duplicatePrevented: true });
     }
 
@@ -523,15 +507,14 @@ async function processDeliveryPayment(data, res) {
     const orderData = orderDoc.data();
     const orderId = orderDoc.id;
     
-    // ========== Skip if already paid ==========
     if (orderData.paymentStatus === 'paid') {
-      console.log(`⚠️ Order ${orderId} already paid - skipping duplicate processing`);
-      return res.json({ received: true, alreadyPaid: true });
+      console.log(`⚠️ Order ${orderId} already paid - skipping`);
+      return res.json({ received: true });
     }
     
-    console.log(`✅ Found EXISTING order: ${orderId} - UPDATING (NOT creating new)`);
+    console.log(`✅ Found EXISTING order: ${orderId} - UPDATING`);
 
-    // ========== UPDATE the existing order (NEVER CREATE NEW) ==========
+    // UPDATE the existing order - NEVER CREATE NEW
     await db.collection('orders').doc(orderId).update({
       paymentStatus: 'paid',
       paymentMethod: 'chapa',
@@ -542,39 +525,10 @@ async function processDeliveryPayment(data, res) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`✅ Order ${orderId} UPDATED successfully - NO DUPLICATE CREATED`);
-
-    // Send notification to pharmacy
-    await db.collection('pharmacy_notifications').add({
-      pharmacyId: orderData.pharmacyId,
-      type: 'payment_received',
-      title: '💰 Payment Received!',
-      message: `Order #${orderId.slice(-6)} - ETB ${paidAmount} paid by ${orderData.customerName}`,
-      isRead: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // Record commission
-    const commission = orderData.commission || 0;
-    const month = new Date().toISOString().slice(0, 7);
-    const revenueRef = db.collection('platform_revenue').doc(month);
-    await db.runTransaction(async (transaction) => {
-      const doc = await transaction.get(revenueRef);
-      if (!doc.exists) {
-        transaction.set(revenueRef, {
-          month, totalCommission: commission, totalOrders: 1,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-      } else {
-        transaction.update(revenueRef, {
-          totalCommission: admin.firestore.FieldValue.increment(commission),
-          totalOrders: admin.firestore.FieldValue.increment(1)
-        });
-      }
-    });
+    console.log(`✅ Order ${orderId} UPDATED - NO DUPLICATE`);
 
   } catch (error) {
-    console.error('❌ Delivery processing error:', error);
+    console.error('❌ Error:', error);
   }
   res.json({ received: true });
 }
