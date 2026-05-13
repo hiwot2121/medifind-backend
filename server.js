@@ -297,12 +297,16 @@ app.get("/api/payments/verify/:reference", async (req, res) => {
   res.json(result);
 });
 
-// ========== DELIVERY PAYMENT (Patient → Pharmacy with 10% Commission) ==========
+// ========== DELIVERY PAYMENT (Patient → Pharmacy) - FIXED: NO NEW ORDER CREATION ==========
 app.post("/api/delivery/initiate-payment", async (req, res) => {
-  const { subtotal, deliveryFee, email, phone, firstName, lastName, pharmacyId, pharmacyName, items } = req.body;
+  const { orderId, subtotal, deliveryFee, email, phone, firstName, lastName, pharmacyId, pharmacyName, items } = req.body;
 
-  if (!subtotal || !email || !pharmacyId) {
-    return res.status(400).json({ success: false, error: "Subtotal, email, and pharmacyId required" });
+  // ========== FIX: orderId is REQUIRED ==========
+  if (!orderId || !subtotal || !email || !pharmacyId) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "orderId, subtotal, email, and pharmacyId required" 
+    });
   }
 
   try {
@@ -313,26 +317,20 @@ app.post("/api/delivery/initiate-payment", async (req, res) => {
     const commission = COMMISSION_CONFIG.calculateCommission(medicineSubtotal);
     const pharmacyEarning = COMMISSION_CONFIG.calculatePharmacyEarning(medicineSubtotal, deliveryFeeAmount);
     
-    console.log(`📊 Delivery Order: ${medicineSubtotal} + ${deliveryFeeAmount} = ${totalAmount} ETB`);
-    console.log(`   Commission: ${commission} ETB | Pharmacy: ${pharmacyEarning} ETB`);
+    console.log(`📊 Payment initiation for EXISTING order: ${orderId}`);
+    console.log(`   Total: ${totalAmount} ETB | Commission: ${commission} ETB | Pharmacy: ${pharmacyEarning} ETB`);
 
-    const orderRef = await db.collection("orders").add({
-      pharmacyId, pharmacyName,
-      customerEmail: email,
-      customerPhone: phone,
-      customerName: `${firstName || ''} ${lastName || ''}`.trim(),
-      items: items || [],
+    // ========== FIX: UPDATE existing order - DO NOT CREATE NEW ==========
+    await db.collection("orders").doc(orderId).update({
       subtotal: medicineSubtotal,
       deliveryFee: deliveryFeeAmount,
       totalAmount,
       commission,
       pharmacyEarning,
-      paymentStatus: 'pending',
-      orderStatus: 'pending',
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    const orderId = orderRef.id;
+    console.log(`✅ Updated existing order: ${orderId}`);
 
     const result = await deliveryChapa.initializeDeliveryPayment({
       totalAmount, email, phone, firstName, lastName, pharmacyId, pharmacyName, orderId
@@ -343,6 +341,7 @@ app.post("/api/delivery/initiate-payment", async (req, res) => {
         paymentReference: result.reference,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
+      console.log(`✅ Payment reference saved to order: ${orderId}`);
     }
 
     res.json({
@@ -352,7 +351,7 @@ app.post("/api/delivery/initiate-payment", async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Delivery payment error:', error);
+    console.error('Payment initiation error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -451,7 +450,6 @@ async function processSubscriptionPayment(data, res) {
   res.json({ received: true });
 }
 
-// ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
 // ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX) ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status, reference } = data;
@@ -532,6 +530,7 @@ async function processDeliveryPayment(data, res) {
   }
   res.json({ received: true });
 }
+
 async function holdFundsInBalance(pharmacyId, pharmacyName, amount) {
   const earningsRef = db.collection('pharmacy_earnings').doc(pharmacyId);
   await db.runTransaction(async (transaction) => {
