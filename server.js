@@ -452,6 +452,7 @@ async function processSubscriptionPayment(data, res) {
 }
 
 // ========== DELIVERY PAYMENT PROCESSING (PERMANENT FIX - NEVER CREATE NEW ORDER) ==========
+// ========== DELIVERY PAYMENT PROCESSING (FIXED - NEVER CREATE NEW ORDER) ==========
 async function processDeliveryPayment(data, res) {
   const { trx_ref, tx_ref, status, reference } = data;
   const transactionRef = trx_ref || tx_ref || reference;
@@ -473,19 +474,34 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== CRITICAL: ONLY find by paymentReference ==========
+    // ========== CRITICAL: Find EXISTING order by paymentReference ==========
     let orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
       .get();
     
-    // If not found, try chapaTransactionRef
+    // If not found by paymentReference, try chapaTransactionRef
     if (orderQuery.empty) {
       console.log(`⚠️ Checking chapaTransactionRef...`);
       orderQuery = await db.collection('orders')
         .where('chapaTransactionRef', '==', transactionRef)
         .limit(1)
         .get();
+    }
+    
+    // If still not found, try by orderId extracted from transactionRef
+    if (orderQuery.empty && transactionRef.includes('_')) {
+      const parts = transactionRef.split('_');
+      if (parts.length >= 3) {
+        // Try to find by orderId in the transaction reference
+        const possibleOrderId = parts.slice(2).join('_');
+        console.log(`⚠️ Trying to find by orderId: ${possibleOrderId}`);
+        const orderDoc = await db.collection('orders').doc(possibleOrderId).get();
+        if (orderDoc.exists) {
+          orderQuery = { docs: [orderDoc], empty: false };
+          console.log(`✅ Found order by ID: ${possibleOrderId}`);
+        }
+      }
     }
     
     // ========== IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
@@ -557,40 +573,6 @@ async function processDeliveryPayment(data, res) {
         });
       }
     });
-
-    // Handle direct payout
-    const pharmacyEarning = orderData.pharmacyEarning || 0;
-    const bankDetails = (await db.collection('pharmacies').doc(orderData.pharmacyId).get()).data()?.settlementAccount;
-    
-    if (bankDetails && bankDetails.accountNumber && bankDetails.accountName && bankDetails.bankName && pharmacyEarning > 0) {
-      const transferResult = await instantPayout.instantTransfer({
-        orderId: orderId,
-        pharmacyId: orderData.pharmacyId,
-        pharmacyName: orderData.pharmacyName,
-        accountName: bankDetails.accountName,
-        accountNumber: bankDetails.accountNumber,
-        bankName: bankDetails.bankName,
-        amount: pharmacyEarning
-      });
-      
-      if (transferResult.success) {
-        await db.collection('instant_settlements').add({
-          orderId: orderId,
-          pharmacyId: orderData.pharmacyId,
-          pharmacyName: orderData.pharmacyName,
-          amount: pharmacyEarning,
-          commission: commission,
-          transferId: transferResult.transferId,
-          status: 'completed',
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        console.log(`✅ Instant settlement: ${pharmacyEarning} ETB to ${orderData.pharmacyName}`);
-      } else {
-        await holdFundsInBalance(orderData.pharmacyId, orderData.pharmacyName, pharmacyEarning);
-      }
-    } else if (pharmacyEarning > 0) {
-      await holdFundsInBalance(orderData.pharmacyId, orderData.pharmacyName, pharmacyEarning);
-    }
 
   } catch (error) {
     console.error('❌ Delivery processing error:', error);
