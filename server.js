@@ -473,12 +473,20 @@ async function processDeliveryPayment(data, res) {
     const paidAmount = verifyResponse.data.data?.amount;
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
-    // ========== CRITICAL: Find EXISTING order by paymentReference ONLY ==========
-    // NO FALLBACK - DO NOT search for random pending orders
-    const orderQuery = await db.collection('orders')
+    // ========== CRITICAL: ONLY find by paymentReference ==========
+    let orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
       .get();
+    
+    // If not found, try chapaTransactionRef
+    if (orderQuery.empty) {
+      console.log(`⚠️ Checking chapaTransactionRef...`);
+      orderQuery = await db.collection('orders')
+        .where('chapaTransactionRef', '==', transactionRef)
+        .limit(1)
+        .get();
+    }
     
     // ========== IF NO ORDER FOUND, DO NOTHING - NEVER CREATE NEW ==========
     if (orderQuery.empty) {
@@ -589,7 +597,6 @@ async function processDeliveryPayment(data, res) {
   }
   res.json({ received: true });
 }
-
 async function holdFundsInBalance(pharmacyId, pharmacyName, amount) {
   const earningsRef = db.collection('pharmacy_earnings').doc(pharmacyId);
   await db.runTransaction(async (transaction) => {
