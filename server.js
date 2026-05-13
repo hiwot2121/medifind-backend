@@ -474,6 +474,7 @@ async function processDeliveryPayment(data, res) {
     console.log(`✅ Payment verified: ${paidAmount} ETB`);
 
     // ========== CRITICAL: Find EXISTING order by paymentReference ONLY ==========
+    // NO FALLBACK - DO NOT search for random pending orders
     const orderQuery = await db.collection('orders')
       .where('paymentReference', '==', transactionRef)
       .limit(1)
